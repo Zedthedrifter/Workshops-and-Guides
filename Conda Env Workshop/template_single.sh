@@ -40,13 +40,11 @@ $pip install seaborn
 #--------------------------------------------------------------------------------------------------------------------
 #these 
 #occasionally when you have to install directly from the sourcecode on github
-function install_trimal { 
+function install_easy353 {
 
-mkdir $HOME/projects/rbge/$USER/env/$env_name/bin/trimal
-git clone https://github.com/inab/trimal.git $HOME/projects/rbge/$USER/env/$env_name/bin/trimal
-cd $HOME/projects/rbge/$USER/env/$env_name/bin/trimal/source
-make
-
+git clone https://github.com/plant720/Easy353.git $HOME/projects/rbge/$USER/env/$env_name/bin/Easy353
+cd $HOME/projects/rbge/$USER/env/$env_name/bin/Easy353
+python3 setup.py install --user
 }
 
 function install_tree {
@@ -66,7 +64,7 @@ install_basic #conda install
 install_tree #can organize different groups of packages into different funtions (later if you want to set up a different env, you can copy it over easily)
 pip_install #for special installing method
 #remember to add path
-install_trimal #trim alignment: remove regions of poor alignment: https://vicfero.github.io/trimal/index.html#installation_sec
+install_easy353 #353 nuclear genes assembly
 }
 
 function main {
