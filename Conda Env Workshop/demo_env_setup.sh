@@ -23,8 +23,8 @@ conda create --name $env_name r-base=4.2.2 python=3.10.12 -y
 mamba install -c bioconda -c conda-forge \
     bioconductor-genomeinfodbdata \
     bioconductor-annotationdbi \
-    r-base=4.4.2 --name $env_name
-mamba install -c micromacro pansyn –y --name $env_name
+    r-base=4.4.2 --name $env_name -y
+mamba install -c micromacro pansyn â€“y --name $env_name
 
 }
 
