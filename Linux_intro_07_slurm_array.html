@@ -1,0 +1,816 @@
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Workshop: SLURM Array Jobs on CropDiversity Cluster</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+            color: #333;
+        }
+        h1 {
+            color: #2c3e50;
+            border-bottom: 3px solid #3498db;
+            padding-bottom: 10px;
+        }
+        h2 {
+            color: #2980b9;
+            margin-top: 30px;
+            border-left: 4px solid #3498db;
+            padding-left: 10px;
+        }
+        h3 {
+            color: #34495e;
+        }
+        .code-block {
+            background-color: #2c3e50;
+            color: #ecf0f1;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 15px 0;
+            overflow-x: auto;
+            font-family: 'Courier New', monospace;
+            border-left: 4px solid #e74c3c;
+        }
+        .important {
+            background-color: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 15px;
+            margin: 15px 0;
+            border-radius: 5px;
+        }
+        .tip {
+            background-color: #d1ecf1;
+            border-left: 4px solid #17a2b8;
+            padding: 15px;
+            margin: 15px 0;
+            border-radius: 5px;
+        }
+        .warning {
+            background-color: #f8d7da;
+            border-left: 4px solid #dc3545;
+            padding: 15px;
+            margin: 15px 0;
+            border-radius: 5px;
+        }
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 20px 0;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 12px;
+            text-align: left;
+        }
+        th {
+            background-color: #3498db;
+            color: white;
+        }
+        tr:nth-child(even) {
+            background-color: #f2f2f2;
+        }
+        .exercise {
+            background-color: #e8f4fc;
+            border: 2px dashed #3498db;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Workshop: SLURM Array Jobs on CropDiversity Cluster</h1>
+
+    <h2>Introduction to HPC and SLURM</h2>
+    
+    <h3>What is a Cluster?</h3>
+    <ul>
+        <li>A collection of computers (nodes) working together</li>
+        <li><strong>Head node</strong>: <code>gruffalo</code> - for job submission and monitoring ONLY</li>
+        <li><strong>Compute nodes</strong>: Where actual computation happens (n19-32-192-hulk, n24-64-384-wesley, etc.)</li>
+        <li><strong>Why?</strong> Run many jobs simultaneously, handle large datasets</li>
+    </ul>
+
+    <h3>Key SLURM Commands</h3>
+    <div class="code-block"><pre>
+# Check cluster status
+sinfo
+sinfo -N  # Detailed node view
+
+# Check job queue
+squeue
+squeue -u $USER  # Your jobs only
+
+# Submit a batch job
+sbatch myjob.sh
+
+# Cancel a job
+scancel JOBID
+scancel -u $USER  # All your jobs
+
+# Job history
+#By default, sacct only shows jobs from the last 24 hours or a similar recent period.
+sacct
+    </pre></div>
+
+    <div class="important">
+        <strong>Important:</strong> All larger data analysis programs and computational workloads MUST be run using Slurm. Only use the head node (gruffalo) for tasks such as job submission and monitoring (or testing small things).
+    </div>
+
+    <div class="tip">
+        <strong>Hacking Trick:</strong> You can add this to your ~/.bashrc to make tracking your jobs easier. The formatting allows 30 charactesr for job names, 10 for user names, etc. 
+        Otherwise the default squeue output can be too short to show all information. The folllowing code changes the display of squeue but keeps all original fields. 
+        this shows JOBID,PARTITION,NAME%30,USER,ST,TIME,NODES,NODELIST(REASON)
+    </div>
+    <div class="code-block"><pre> 
+    #This configuration trick allows you to view all your jobs simply by typing 'jobs' in the terminal.
+    alias jobs='squeue --format="%.18i %.10P %.30j %.8u %.2t %.10M %.6D %R" -u $USER'
+    </pre></div>
+    <p> This way you can actually see the full job names and user names without truncation. </p>
+    <div class="code-block"><pre> 
+             JOBID  PARTITION                           NAME     USER ST       TIME  NODES NODELIST(REASON)
+        8640518_46      short                    downloadENA vcarinab  R       0:40      1 n24-64-384-buffy
+        8640518_45      short                    downloadENA vcarinab  R       2:22      1 n24-64-384-buffy
+        8637834      short                       med_test sappleya  R    2:34:42      1 n24-64-384-cordelia
+        8640664_1      short   inna_samtoolsMapping_edit.sh ibirchen  R      31:02      1 n24-64-384-buffy
+        8640664_2      short   inna_samtoolsMapping_edit.sh ibirchen  R      31:02      1 n23-64-256-black
+        8640664_3      short   inna_samtoolsMapping_edit.sh ibirchen  R      31:02      1 n23-64-256-black
+</pre></div>
+    <p> Otherwise might appear like this: </p>
+    <div class="code-block"><pre>
+           8636105    medium ${SAMPLE   yichen  R   14:04:53      1 n24-64-384-dawn
+           8636157    medium ${SAMPLE   yichen  R   13:36:53      1 n24-64-384-fred
+           8640518_[49-1935%1     short download vcarinab PD       0:00      1 (JobArrayTaskLimit)
+           8634456     short aggregat   tallen PD       0:00      1 (DependencyNeverSatisfied)
+</pre></div>
+    <p>
+there are more feilds to customize if you are interested, check squeue --helpFormat
+    </p>
+<div class="code-block"><pre>
+Account             AccrueTime          admin_comment       AllocNodes
+AllocSID            ArrayJobId          ArrayTaskId         AssocId
+BatchFlag           BatchHost           BoardsPerNode       BurstBuffer
+BurstBufferState    Cluster             ClusterFeature      Command
+Comment             Container           ContainerId         Contiguous
+Cores               CoreSpec            CPUsPerTask         cpus-per-task
+cpus-per-tres       Deadline            DelayBoot           Dependency
+DerivedEC           EligibleTime        EndTime             ExcNodes
+exit_code           Feature             GroupId             GroupName
+HetJobId            HetJobIdSet         HetJobOffset        JobArrayId
+JobId               LastSchedEval       Licenses            MaxCPUs
+MaxNodes            mem-per-tres        MCSLabel            MinCPUs
+MinMemory           MinTime             MinTmpDisk          Name
+Network             Nice                NodeList            NTPerCore
+NTPerNode           NTPerSocket         NTPerBoard          NumCPUs
+NumNodes            NumTasks            Origin              OriginRaw
+OverSubscribe       Partition           PendingTime         PreemptTime
+Prefer              Priority            PriorityLong        Profile
+QOS                 Reason              ReasonList          Reboot
+ReqNodes            ReqSwitch           Requeue             Reservation
+ResizeTime          RestartCnt          SchedNodes          SCT
+SiblingsActive      SiblingsActiveRaw   SiblingsViable      SiblingsViableRaw
+Sockets             SPerBoard           StartTime           State
+StateCompact        StdErr              StdIn               StdOut
+SubmitTime          system_comment      Threads             TimeLeft
+TimeLimit           TimeUsed            tres-alloc          tres-bind
+tres-freq           tres-per-job        tres-per-socket     tres-per-task
+UserId              UserName            Wait4Switch         WCKey
+WorkDir
+</pre></div>    
+
+    <h2>Array Jobs: The Power of Parallel Processing</h2>
+    
+    <h3>What are Array Jobs?</h3>
+    <ul>
+        <li>Run the <strong>same script</strong> many times with different inputs</li>
+        <li>Each run is called a "task"</li>
+        <li>Tasks are <strong>independent</strong> - don't need to communicate</li>
+        <li>Perfect for processing multiple samples/files</li>
+    </ul>
+
+    <h3>Why Use Array Jobs?</h3>
+    <ol>
+        <li><strong>Efficiency</strong>: Process hundreds of samples simultaneously</li>
+        <li><strong>Simplicity</strong>: One script handles all samples</li>
+        <li><strong>Organization</strong>: One job ID, many tasks</li>
+        <li><strong>Resource friendly</strong>: Better than submitting 100 individual jobs</li>
+    </ol>
+
+    <h2>Array Job Structure</h2>
+    
+    <h3>Basic Template</h3>
+    <div class="code-block">
+<pre>
+#!/bin/bash
+#SBATCH --job-name=my_array_job
+#SBATCH --array=1-10          # Run tasks 1 through 10
+#SBATCH --cpus-per-task=4     # Request 4 CPUs per task
+#SBATCH --mem=8G              # Request 8GB memory per task
+#SBATCH --output=slurm-%A_%a.out  # %A=jobID, %a=taskID
+#SBATCH --error=slurm-%A_%a.err   # Separate error logs
+
+# Get INPUT for this task
+
+# Run your analysis: E.G.
+python analyze.py --input ${INPUT} --output ${OUTPUT}
+</pre>
+    </div>
+<P>
+    You can copy this template to a new file (e.g., my_array_job.sh) and modify it according to your analysis needs.
+    we will go through each part of this script in detail below
+</P>
+    <h3>Key Components:</h3>
+    <table>
+        <tr>
+            <th>Component</th>
+            <th>Description</th>
+        </tr>
+        <tr>
+            <td><code>#SBATCH --array=1-10</code></td>
+            <td>Defines task range (1 to 10)</td>
+        </tr>
+        <tr>
+            <td><code>$SLURM_ARRAY_TASK_ID</code></td>
+            <td>Auto-generated variable (1, 2, 3...)</td>
+        </tr>
+        <tr>
+            <td><code>%A</code> in output filename</td>
+            <td>Job ID</td>
+        </tr>
+        <tr>
+            <td><code>%a</code> in output filename</td>
+            <td>Task ID</td>
+        </tr>
+    </table>
+
+    <h2>Practical Session: Matching Samples to Task IDs</h2>
+    
+    <h3>Sometimes things are rather straightforward: e.g. Flongle</h3>
+    <p>
+Sometimes your sequencer returns files that are already named in a way suitable for SLURM_ARRAY_TASK_ID. For instance, Flongle outputs are named with a series of numbers that can directly correspond to SLURM array indices.
+After some merging your input files might be named like this:
+
+        </p>
+    <div class="code-block">
+<pre>
+barcode_01.fastq  barcode_05.fastq  barcode_09.fastq  barcode_13.fastq  barcode_17.fastq  barcode_21.fastq  barcode_25.fastq  barcode_29.fastq  barcode_33.fastq  barcode_37.fastq  barcode_41.fastq  barcode_45.fastq
+barcode_02.fastq  barcode_06.fastq  barcode_10.fastq  barcode_14.fastq  barcode_18.fastq  barcode_22.fastq  barcode_26.fastq  barcode_30.fastq  barcode_34.fastq  barcode_38.fastq  barcode_42.fastq  barcode_46.fastq
+barcode_03.fastq  barcode_07.fastq  barcode_11.fastq  barcode_15.fastq  barcode_19.fastq  barcode_23.fastq  barcode_27.fastq  barcode_31.fastq  barcode_35.fastq  barcode_39.fastq  barcode_43.fastq  barcode_47.fastq
+barcode_04.fastq  barcode_08.fastq  barcode_12.fastq  barcode_16.fastq  barcode_20.fastq  barcode_24.fastq  barcode_28.fastq  barcode_32.fastq  barcode_36.fastq  barcode_40.fastq  barcode_44.fastq  barcode_48.fastq
+</pre></div>
+<p>
+In this case, you can directly use SLURM_ARRAY_TASK_ID to reference these files by submitting an array job with the appropriate range:1-48
+Well, sometimes you got to be careful with the formatting and see if the numbers have leading zeros or not:
+barcode_01.fastq vs barcode_1.fastq
+If they do have leading zeros, you might need to adjust your script accordingly, for example:
+ </p>
+    <div class="code-block"> <pre>
+INPUT_FILE=$(printf "barcode_%02d.fastq" ${SLURM_ARRAY_TASK_ID})
+#IF the task ID is 1, this will produce barcode_01.fastq
+#OTHERWISE YOU CAN JUST USE:
+INPUT_FILE="barcode_${SLURM_ARRAY_TASK_ID}.fastq"
+</pre></div>
+   <div class="exercise">
+    try writing a SLURM script that processes these barcode fastq files using an array job. In reality, you could run a quality control tool like FastQC on each file.
+    for our purpose, just echo the file name being processed. Just use the first 20 files for this exercise.
+    You can follow the template below:
+    </div>
+    <div class="code-block"> <pre>
+#!/bin/bash
+#SBATCH --job-name=my_array_job
+#SBATCH --export=ALL
+#SBATCH --partition=short #default is medium. Use short for jobs under 2 hours
+#SBATCH --array=1-10          # Run tasks 1 through 10
+#SBATCH --cpus-per-task=1     # Request 1 CPUs per task
+#SBATCH --mem=200K              # we don't need much memory for this
+#SBATCH --output=slurm-%A_%a.out  # %A=jobID, %a=taskID
+
+function process_barcode {
+
+INDIR=$1
+OUTDIR=$2
+
+INPUT=$(printf "barcode_%02d" ${SLURM_ARRAY_TASK_ID})
+echo "Processing ${INPUT}.fastq"
+head -n 1 ${INDIR}/${INPUT}.fastq > ${OUTDIR}/${INPUT}.head  #just print the first line as a test
+
+}
+
+function main {
+DATA=$HOME/projects/rbge/zedchen/Flongle/20250903/00-mergefq/  #your data directory for this exercise
+WORKDIR=$SCRATCH/Array_test #your working directory for this exercise
+RESULT1=$WORKDIR/01_test_output
+
+#setup
+function setup_dir {
+
+mkdir $WORKDIR
+mkdir $RESULT1 -p
+}
+
+setup_dir
+#SLURM_ARRAY_TASK_ID=1
+
+#EXECUTE
+process_barcode $DATA $RESULT1
+}
+
+main
+</pre></div>
+<P>
+    However, the world is not always that simple. Sometimes your input files are named in a way that does not directly correspond to SLURM_ARRAY_TASK_ID. In such cases, you need to create a mapping between task IDs and your actual input files.
+    for instance, the read files coming back from Novogene might be named like this:
+</P>
+<div class="code-block"><pre>
+/mnt/shared/scratch/zchen//Barcoding_km/barcoding_potamogeton/data/X204SC25105430-Z01-F004/01.RawData/CSN5b/CSN5b_1.fq.gz
+/mnt/shared/scratch/zchen//Barcoding_km/barcoding_potamogeton/data/X204SC25105430-Z01-F004/01.RawData/CSN5b/CSN5b_2.fq.gz
+/mnt/shared/scratch/zchen//Barcoding_km/barcoding_potamogeton/data/X204SC25105430-Z01-F004/01.RawData/JP1/JP1_EKDL250032895-1A_23GK2LLT4_L8_1.fq.gz
+/mnt/shared/scratch/zchen//Barcoding_km/barcoding_potamogeton/data/X204SC25105430-Z01-F004/01.RawData/JP1/JP1_EKDL250032895-1A_23GK2LLT4_L8_2.fq.gz
+/mnt/shared/scratch/zchen//Barcoding_km/barcoding_potamogeton/data/X204SC25105430-Z01-F004/01.RawData/JP4/JP4_EKDL250032896-1A_23GK2LLT4_L8_1.fq.gz
+/mnt/shared/scratch/zchen//Barcoding_km/barcoding_potamogeton/data/X204SC25105430-Z01-F004/01.RawData/JP4/JP4_EKDL250032896-1A_23GK2LLT4_L8_2.fq.gz
+/mnt/shared/scratch/zchen//Barcoding_km/barcoding_potamogeton/data/X204SC25105430-Z01-F004/01.RawData/PAL_ML/PAL_ML_EKDL250032892-1A_23GK2LLT4_L8_1.fq.gz
+/mnt/shared/scratch/zchen//Barcoding_km/barcoding_potamogeton/data/X204SC25105430-Z01-F004/01.RawData/PAL_ML/PAL_ML_EKDL250032892-1A_23GK2LLT4_L8_2.fq.gz
+/mnt/shared/scratch/zchen//Barcoding_km/barcoding_potamogeton/data/X204SC25105430-Z01-F004/01.RawData/PEP_SU/PEP_SU_1.fq.gz
+/mnt/shared/scratch/zchen//Barcoding_km/barcoding_potamogeton/data/X204SC25105430-Z01-F004/01.RawData/PEP_SU/PEP_SU_2.fq.gz
+/mnt/shared/scratch/zchen//Barcoding_km/barcoding_potamogeton/data/X204SC25105430-Z01-F004/01.RawData/PRUT_JW/PRUT_JW_EKDL250032894-1A_23GK2LLT4_L8_1.fq.gz
+/mnt/shared/scratch/zchen//Barcoding_km/barcoding_potamogeton/data/X204SC25105430-Z01-F004/01.RawData/PRUT_JW/PRUT_JW_EKDL250032894-1A_23GK2LLT4_L8_2.fq.gz
+/mnt/shared/scratch/zchen//Barcoding_km/barcoding_potamogeton/data/X204SC25105430-Z01-F004/01.RawData/SEPA_14b/SEPA_14b_1.fq.gz
+/mnt/shared/scratch/zchen//Barcoding_km/barcoding_potamogeton/data/X204SC25105430-Z01-F004/01.RawData/SEPA_14b/SEPA_14b_2.fq.gz
+/mnt/shared/scratch/zchen//Barcoding_km/barcoding_potamogeton/data/X204SC25105430-Z01-F004/01.RawData/SEPA_4a/SEPA_4a_EKDL250032897-1A_23GK2LLT4_L8_1.fq.gz
+/mnt/shared/scratch/zchen//Barcoding_km/barcoding_potamogeton/data/X204SC25105430-Z01-F004/01.RawData/SEPA_4a/SEPA_4a_EKDL250032897-1A_23GK2LLT4_L8_2.fq.gz
+</pre></div>
+<p>
+    Here, the file names do not directly correspond to simple numeric indices but whatever sample names plus job ID lane information etc. etc.
+    In such cases, you need to create a mapping between SLURM_ARRAY_TASK_ID and your actual input files. There are several ways to do this:
+</p>
+    <h3>Option 1: The Naive Approach (NOT RECOMMENDED)</h3>
+    <div class="code-block">
+<pre>
+# Renaming files: sample1.fq.gz, sample2.fq.gz, etc.
+# Then in your script:
+INPUT_FILE="sample${SLURM_ARRAY_TASK_ID}.txt"
+    </pre></div>
+    <div class="warning">
+        <strong>Problems:</strong> Renaming is tedious, error-prone, breaks original organization
+    </div>
+
+    <h3>Option 2: The Smart Approach - Using Indexing</h3>
+    
+    <h4>Method A: Simple Text File</h4>
+    <p>Create a text file listing all your sample names, one per line. You can get that easily with a ls command. 
+    Then you can use the SLURM_ARRAY_TASK_ID to index into this list. i.e. to extract the first/second/third line and use it as the sample name</p>
+    <div class="code-block">
+<pre>
+# samples.txt (one sample per line)
+sample_apple.fastq
+sample_banana.fastq  
+sample_cherry.fastq
+sample_dragonfruit.fastq
+
+# In your SLURM script:
+SAMPLES_LIST="samples.txt"
+SAMPLE=$(sed -n "${SLURM_ARRAY_TASK_ID}p" ${SAMPLES_LIST})
+echo "Processing sample: ${SAMPLE}"
+    </pre></div>
+
+    <h4>Method B: CSV/TSV File</h4>
+    <p>a even better option is to use your metadata. If you have a metadata file (CSV/TSV) with multiple columns (e.g., sample name, treatment, replicate), you can still use SLURM_ARRAY_TASK_ID to extract the relevant information. 
+        the upside to this approach is that you can extract multiple fields (e.g., sample name, treatment, replicate) for each task and your data and metadata are always in sync and updated. </p>
+    <div class="code-block">
+<pre>
+# metadata.csv
+sample_id,treatment,replicate
+sample_A,control,1
+sample_B,treatment,1
+sample_C,control,2
+sample_D,treatment,2
+
+# Extract just the sample name (first column)
+SAMPLES_FILE="metadata.csv"
+SAMPLE=$(sed -n "${SLURM_ARRAY_TASK_ID}p" ${SAMPLES_FILE} | cut -d',' -f1)
+
+# Skip header if needed:
+SAMPLE=$(tail -n +2 ${SAMPLES_FILE} | sed -n "${SLURM_ARRAY_TASK_ID}p" | cut -d',' -f1)
+
+# Method 2: Adjust array range: THIS IS SO MUCH EASIER
+#SBATCH --array=2-51  # If line 1 is header
+    </pre></div>
+
+<h2>Another hand-on practice</h2>
+<p> I created some mock data for demonstration purposes. You can access them from: </p>
+
+<div class="code-block"><pre>
+# Mock data directory       
+DATA=$HOME/projects/rbge/zedchen/workshop/slurm_array_practice/mock_data_fq   
+# Metadata file
+METADATA=$HOME/projects/rbge/zedchen/workshop/slurm_array_practice/mock_data_fq/mock_metadata.csv
+</pre></div>
+<p> Your task is to find how how many reads are there for each sample and if the paired files have the same number of reads. </p>
+<div class="tip"><pre>
+    #to view content of zip file: 
+    zcat
+    #to count number of lines in a fastq file:
+    zcat sample.fastq.gz | wc -l
+    #remember each read has 4 lines in a fastq file, so you need to divide the line count by 4 to get the number of reads
+    #alternatively, if you remember our fastq workshop:
+</pre></div>
+    <div class="code-block"><pre>
+egrep -c '^@' /mnt/shared/projects/rbge/zedchen/Flongle/20250903/00-mergefq/barcode_01.fastq
+egrep -c '^\+' /mnt/shared/projects/rbge/zedchen/Flongle/20250903/00-mergefq/barcode_01.fastq
+egrep -c '^\+$' /mnt/shared/projects/rbge/zedchen/Flongle/20250903/00-mergefq/barcode_01.fastq
+</pre></div>
+    <div class="tip"><pre>
+     Compare the outcome of each command and explain the difference:
+^: beginning of the line
+$: end of the line
+\: escape for wildcard 
++: as a wild card: Matches the number of occurrences of the previous single character, which can be 1 or more times 
+(logically, what would happen if you request ^+?).
+</pre></div>   
+<p>We can keep using the template from before, just modify the process_barcode function to do the read counting </p>
+<div class="code-block"> <pre>
+
+#!/bin/bash
+#SBATCH --job-name=my_array_job
+#SBATCH --export=ALL
+#SBATCH --partition=short #default is medium. Use short for jobs under 2 hours
+#SBATCH --array=2-9         # Run tasks 2 through 9
+#SBATCH --cpus-per-task=1     # Request 1 CPUs per task
+#SBATCH --mem=200K              # we don't need much memory for this
+#SBATCH --output=slurm-%A_%a.out  # %A=jobID, %a=taskID
+
+function process_barcode {
+
+INDIR=$1
+OUTDIR=$2
+
+INPUT=$(printf "barcode_%02d" ${SLURM_ARRAY_TASK_ID})
+echo "Processing ${INPUT}.fastq"
+head -n 1 ${INDIR}/${INPUT}.fastq > ${OUTDIR}/${INPUT}.head  #just print the first line as a test
+
+}
+
+function read_count {
+
+SAMPLE=$1
+INDIR=$2
+OUTDIR=$3
+
+echo $SAMPLE
+R1=${SAMPLE}_1.fq.gz
+R2=${SAMPLE}_2.fq.gz #this bit you need to modify according to your file naming convention
+echo "Processing pair-end reads for ${SAMPLE}"
+zcat ${INDIR}/${R1}|egrep -c '^\+$' > ${OUTDIR}/${SAMPLE}_read_count.txt #why are we using > here?
+zcat ${INDIR}/${R2}|egrep -c '^\+$' >> ${OUTDIR}/${SAMPLE}_read_count.txt #why are we using >> here?
+
+}
+
+function main {
+#CONSTANTS
+#=================================================================================================
+# Mock data directory
+DATA=$HOME/projects/rbge/zedchen/Flongle/20250903/00-mergefq/
+FASTQ=$HOME/projects/rbge/zedchen/workshop/slurm_array_practice/mock_data_fq
+# Metadata file
+METADATA=$HOME/projects/rbge/zedchen/workshop/slurm_array_practice/mock_data_fq/mock_metadata.csv
+#WORK directories
+WORKDIR=$SCRATCH/Array_test #your working directory for this exercise
+RESULT1=$WORKDIR/01_test_output
+RESULT2=$WORKDIR/02_read_count
+#=================================================================================================
+#setup
+function setup_dir {
+
+mkdir $WORKDIR -p
+mkdir $RESULT1 -p
+mkdir $RESULT2 -p
+}
+
+setup_dir
+
+#DEFINE SAMPLE NAME
+SAMPLE=$(sed -n "${SLURM_ARRAY_TASK_ID}p" ${METADATA} | cut -d',' -f1)
+echo $SAMPLE
+
+#EXECUTE
+read_count $SAMPLE $FASTQ $RESULT2
+}
+
+main
+</pre></div>       
+    <h2>Bioinformatics Examples</h2>
+    
+    <h3>Example 1: Simple FASTQ Processing</h3>
+    <div class="code-block">
+<pre>
+#!/bin/bash
+#SBATCH --job-name=fastqc_array
+#SBATCH --array=1-24
+#SBATCH --cpus-per-task=2
+#SBATCH --mem=4G
+#SBATCH --output=fastqc_%A_%a.out
+
+# List of samples
+SAMPLES="my_samples.txt"
+
+# Get this task's sample
+CURRENT_SAMPLE=$(sed -n "${SLURM_ARRAY_TASK_ID}p" ${SAMPLES})
+
+# Run FastQC
+fastqc ${CURRENT_SAMPLE}_R1.fastq.gz ${CURRENT_SAMPLE}_R2.fastq.gz
+    </pre></div>
+
+    <h3>Example 2: Alignment with BWA</h3>
+    <div class="code-block">
+<pre>
+#!/bin/bash
+#SBATCH --job-name=align_array
+#SBATCH --array=1-100%20  # 100 tasks, max 20 running at once
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=16G
+
+SAMPLES="all_samples.txt"
+REFERENCE="/shared/genomes/human.fa"
+SAMPLE=$(sed -n "${SLURM_ARRAY_TASK_ID}p" ${SAMPLES})
+
+bwa mem -t 8 ${REFERENCE} \
+    ${SAMPLE}_R1.fastq.gz \
+    ${SAMPLE}_R2.fastq.gz > ${SAMPLE}.sam
+    </pre></div>
+
+    <h3>Example 3: Complex Workflow with Multiple Columns</h3>
+    <div class="code-block">
+<pre>
+#!/bin/bash
+#SBATCH --array=1-50
+
+# metadata.tsv: sample\ttreatment\ttimepoint
+METADATA="experiment_metadata.tsv"
+
+# Extract all fields for this task
+LINE=$(sed -n "${SLURM_ARRAY_TASK_ID}p" ${METADATA})
+SAMPLE=$(echo $LINE | cut -f1)
+TREATMENT=$(echo $LINE | cut -f2)
+TIMEPOINT=$(echo $LINE | cut -f3)
+
+echo "Processing ${SAMPLE} (${TREATMENT} at ${TIMEPOINT})"
+# Your analysis here...
+    </pre></div>
+
+<h3>Example 4:  FASTP CLEANING</h3>
+    <div class="code-block">
+<pre>
+#this is a function that cleans up the reads using fastp
+
+function fastp_qc {
+
+#SKIP TRIM ADAPTOR
+INDIR=$1
+OUTDIR=$2
+SAMPLE=$(sed -n ${SLURM_ARRAY_TASK_ID}p $SAMPLES|cut -f 1 -d ',')
+
+fastp -i ${INDIR}/${SAMPLE}_1.fq.gz -I ${INDIR}/${SAMPLE}_2.fq.gz \
+       -o ${OUTDIR}/${SAMPLE}_1.fq.gz -O ${OUTDIR}/${SAMPLE}_2.fq.gz \
+       --unpaired1 ${OUTDIR}/${SAMPLE}_unpaired1.fq.gz --unpaired2 ${OUTDIR}/${SAMPLE}_unpaired2.fq.gz \
+       -j ${OUTDIR}/${SAMPLE}.json \
+       -h ${OUTDIR}/${SAMPLE}.html \
+       --dont_overwrite --detect_adapter_for_pe -c > ${OUTDIR}/${SAMPLE}.fastp.log
+}
+</pre></div>
+
+<div class="tip"><pre>
+And you can write a lot of functions with this format as long as you specify input and output directories and the formatting of the input/output files
+</pre></div>
+
+<div class="code-block"><pre>
+#This is how you 'RUN' this function:
+
+fastp_qc $DATA $RESULT1 
+</pre></div>
+
+<div class="tip"><pre>
+the function takes two variables: $INDIR and $OUTDIR
+Instead of typing the full path, you can save the path as variables and call the variable names. This is less error-prone (only type out the path once)
+</pre></div>
+
+<div class="code-block"><pre>
+#E.g.
+WORKDIR=$SCRATCH/Barcoding_km/Test_salix
+DATA=$WORKDIR/raw_data
+RESULT1=$WORKDIR/01_fastp_cleaned
+RESULT2=$WORKDIR/02_assembly
+...
+</pre></div>
+
+    <h2>Advanced Tips</h2>
+    
+    <h3>1. Limiting Concurrent Tasks</h3>
+    <div class="code-block">
+<pre>
+# Only run 10 tasks at a time
+#SBATCH --array=1-1000%10
+   </pre> </div>
+    <p><strong>Why?</strong> Avoid overwhelming shared resources, be a good cluster citizen!</p>
+
+    <h3>2. Non-sequential Arrays</h3>
+    <div class="code-block">
+<pre>
+# Specific task IDs
+#SBATCH --array=1,5,7,22
+
+# Steps
+#SBATCH --array=1-100:5  # 1,6,11,16...
+
+# Combine with concurrency limit
+#SBATCH --array=1-1000%50:10  # Every 10th sample, max 50 at once
+   </pre> </div>
+
+    <h3>3. Handling Failed Tasks</h3>
+    <div class="code-block">
+<pre>
+#!/bin/bash
+#SBATCH --array=1-100
+
+SAMPLES="samples.txt"
+SAMPLE=$(sed -n "${SLURM_ARRAY_TASK_ID}p" ${SAMPLES})
+
+# Check if input file exists
+if [[ ! -f "${SAMPLE}.fastq.gz" ]]; then
+    echo "ERROR: ${SAMPLE}.fastq.gz not found!" >&2
+    exit 1
+fi
+    </pre></div>
+<div class="tip"><pre>
+    >&2 means redirect output to standard error (stderr) stream instead of standard output (stdout).
+    </pre></div>
+    <h3>In Unix/Linux, there are three standard streams:</h3>
+    <table>
+    <thead>
+        <tr>
+            <th>Stream</th>
+            <th>File Descriptor</th>
+            <th>Default Destination</th>
+            <th>Typical Use</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td>stdin (Standard Input)</td>
+            <td>0</td>
+            <td>Keyboard</td>
+            <td>Input to programs</td>
+        </tr>
+        <tr>
+            <td>stdout (Standard Output)</td>
+            <td>1</td>
+            <td>Terminal/screen</td>
+            <td>Normal program output</td>
+        </tr>
+        <tr>
+            <td>stderr (Standard Error)</td>
+            <td>2</td>
+            <td>Terminal/screen</td>
+            <td>Error messages</td>
+        </tr>
+    </tbody>
+</table>
+
+    <h2>Common Pitfalls & Solutions</h2>
+    
+    <h3>Problem: Task ID doesn't match file list</h3>
+    <p><strong>Solution</strong>: Always verify!</p>
+    <div class="code-block">
+<pre>
+# Test before submitting!
+NUM_SAMPLES=$(wc -l < samples.txt)
+echo "You have ${NUM_SAMPLES} samples"
+echo "Array will run tasks: 1-${NUM_SAMPLES}"
+   </pre> </div>
+
+    <h3>Problem: Header in CSV file</h3>
+    <p><strong>Solution</strong>: Skip it</p>
+    <div class="code-block">
+<pre>
+# Method 1: Use tail
+SAMPLE=$(tail -n +2 samples.csv | sed -n "${SLURM_ARRAY_TASK_ID}p" | cut -f1)
+
+# Method 2: Adjust array range
+# THIS IS SO MUCH EASIER
+#SBATCH --array=2-51  # If line 1 is header
+   </pre> </div>
+
+    <h3>Problem: Need to process pairs (R1 and R2)</h3>
+    <p><strong>Solution</strong>: Extract base name</p>
+    <div class="code-block">
+<pre>
+SAMPLE=$(sed -n "${SLURM_ARRAY_TASK_ID}p" samples.txt)
+R1="${SAMPLE}_R1.fastq.gz"
+R2="${SAMPLE}_R2.fastq.gz"
+   </pre> </div>
+
+    <h2>Best Practices</h2>
+    <ol>
+        <li><strong>Test with small array first</strong>
+            <div class="code-block">#SBATCH --array=1-2  # Test with 2 samples OR EVEN JUST ONE </div>
+        </li>
+        <li><strong>Use meaningful job names</strong>
+            <div class="code-block">#SBATCH --job-name="POTAMAP" </div>
+        </li>
+        <li><strong>Request appropriate resources</strong>
+            <ul>
+                <li>Don't ask for 32 CPUs if you only use 2</li>
+                <li>Don't ask for 128GB if you only need 4GB</li>
+            </ul>
+        </li>
+        <li><strong>Clean up temporary files</strong>
+            <div class="code-block"><pre>
+# Use scratch space
+cp input.fastq $SCRATCH/
+cd $SCRATCH
+# Do work...
+cp results.txt /mnt/shared/projects/${USER}/
+           </pre> </div>
+        </li>
+        <li><strong>Monitor your jobs</strong>
+            <div class="code-block">watch -n 10 'squeue -u $USER'</div>
+        </li>
+    </ol>
+
+    <div class="exercise">
+        <h2>Exercise: Create Your First Array Job</h2>
+        
+        <h3>Task: Process RNA-seq samples</h3>
+        <ol>
+            <li>Create <code>samples.txt</code> with 5 sample names</li>
+            <li>Write a SLURM script that:
+                <ul>
+                    <li>Runs FastQC on each sample</li>
+                    <li>Trims adapters with Trimmomatic</li>
+                    <li>Outputs results to a results directory</li>
+                </ul>
+            </li>
+            <li>Submit and monitor</li>
+        </ol>
+
+        <h3>Starter Code:</h3>
+        <div class="code-block"><pre>
+#!/bin/bash
+#SBATCH --job-name=my_first_array
+#SBATCH --array=1-5
+#SBATCH --cpus-per-task=4
+#SBATCH --mem=8G
+#SBATCH --output=logs/slurm-%A_%a.out
+
+SAMPLES="samples.txt"
+SAMPLE=$(sed -n "${SLURM_ARRAY_TASK_ID}p" ${SAMPLES})
+
+echo "=== Task ${SLURM_ARRAY_TASK_ID}: Processing ${SAMPLE} ==="
+echo "Running on: $(hostname)"
+echo "Started at: $(date)"
+
+# Your commands here...
+fastqc ${SAMPLE}_R1.fastq ${SAMPLE}_R2.fastq
+# ... more analysis ...
+
+echo "Finished at: $(date)"
+       </pre> </div>
+    </div>
+
+    <h2>Resources & Help</h2>
+    
+    <h3>CropDiversity Specific:</h3>
+    <ul>
+        <li>Web monitor: <a href="https://www.cropdiversity.ac.uk/top/" target="_blank">https://www.cropdiversity.ac.uk/top/</a></li>
+        <li>Queue policies: Check documentation</li>
+        <li>Support: Contact sysadmins</li>
+    </ul>
+
+    <h3>SLURM Documentation:</h3>
+    <div class="code-block"><pre>
+man sbatch
+man srun
+man squeue
+   </pre> </div>
+
+    <div class="important">
+        <h3>Remember:</h3>
+        <ul>
+            <li><strong>Never</strong> run heavy computations on <code>gruffalo</code> (head node)</li>
+            <li>Use array jobs for parallel sample processing</li>
+            <li>Request only what you need</li>
+            <li>Clean up after yourself</li>
+            <li>Be a good cluster citizen!</li>
+        </ul>
+        <p style="text-align: center; font-style: italic; margin-top: 10px;">
+            "With great computing power comes great responsibility!"
+        </p>
+    </div>
+
+</body>
+</html>
