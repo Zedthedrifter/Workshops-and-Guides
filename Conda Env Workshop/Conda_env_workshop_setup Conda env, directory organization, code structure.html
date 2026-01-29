@@ -1,0 +1,632 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Workshop: Conda Environments for Bioinformatics</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+            color: #333;
+        }
+        h1 {
+            color: #2c3e50;
+            border-bottom: 3px solid #3498db;
+            padding-bottom: 10px;
+        }
+        h2 {
+            color: #2980b9;
+            margin-top: 30px;
+            border-left: 4px solid #3498db;
+            padding-left: 10px;
+        }
+        h3 {
+            color: #34495e;
+        }
+        .code-block {
+            background-color: #2c3e50;
+            color: #ecf0f1;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 15px 0;
+            overflow-x: auto;
+            font-family: 'Courier New', monospace;
+            border-left: 4px solid #e74c3c;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        .important {
+            background-color: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 15px;
+            margin: 15px 0;
+            border-radius: 5px;
+        }
+        .tip {
+            background-color: #d1ecf1;
+            border-left: 4px solid #17a2b8;
+            padding: 15px;
+            margin: 15px 0;
+            border-radius: 5px;
+        }
+        .warning {
+            background-color: #f8d7da;
+            border-left: 4px solid #dc3545;
+            padding: 15px;
+            margin: 15px 0;
+            border-radius: 5px;
+        }
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 20px 0;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 12px;
+            text-align: left;
+        }
+        th {
+            background-color: #3498db;
+            color: white;
+        }
+        tr:nth-child(even) {
+            background-color: #f2f2f2;
+        }
+        .exercise {
+            background-color: #e8f4fc;
+            border: 2px dashed #3498db;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 5px;
+        }
+        .image-container {
+            text-align: center;
+            margin: 20px 0;
+        }
+        .image-container img {
+            max-width: 100%;
+            height: auto;
+            border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        .caption {
+            font-style: italic;
+            color: #666;
+            margin-top: 5px;
+            font-size: 0.9em;
+        }
+    </style>
+</head>
+<body>
+
+<h1>Workshop: Conda Environments for Bioinformatics</h1>
+
+<div class="important">
+<strong>Acknowledgement:</strong> Substantial credit to Al Ivens at University of Edinburgh<br>
+<strong>Code templates:</strong> /mnt/shared/projects/rbge/zedchen/workshop/Conda_Env_01
+</div>
+
+<h2>Packages</h2>
+<p>When we login to Crop Diversity and start a Python session ("bubble"), can we do everything we want? No, our initial bubble just provides some basic functionality. The rest of all the cool things we might want are not immediately available - we need to get them "into our bubble".</p>
+
+<p>We accessed modules using <strong>import</strong> commands such as:</p>
+<div class="code-block"><pre>import os, shutil, subprocess</pre></div>
+<p>which enabled us to do many file manipulation tasks that we couldn't do when we had just started the Python3 session.</p>
+
+<h3>Modules, packages, libraries...</h3>
+<ul>
+    <li><strong>Module</strong>: a collection of functions and variables, e.g. in a script</li>
+    <li><strong>Package</strong>: a collection of modules with an <strong>__init__.py</strong> file (can be empty), e.g. a directory with scripts</li>
+    <li><strong>Library</strong>: a collection of packages with related functionality</li>
+</ul>
+<p>The phrases <em>library</em> and <em>package</em> are often used interchangeably...</p>
+<p><strong>Hierarchy:</strong> Modules (function) &lt; packages (script) &lt; library (collection of scripts/directory)</p>
+
+<h2>Dependencies</h2>
+<p>When we install <strong>pandas</strong> (for manipulating dataframe in python) or similar, many packages do not just do everything on their own. Instead, they <strong>depend</strong> on other packages for their functionality.</p>
+
+<p>For example, the <a href="https://docs.scipy.org/doc/scipy/">scipy package</a> is used for numerical routines, but also makes use of other packages, such as <strong>numpy</strong> and <strong>matplotlib</strong> and so on. So we say that <strong>numpy</strong> and <strong>matplotlib</strong> are <strong>dependencies</strong> of <strong>scipy</strong>: it won't work without them!</p>
+
+<p>Many packages are continually being developed, so we can end up with loads of different <strong>versions</strong> of packages, and sometimes, functionalities have been added or removed... oops! Other packages, which are dependent on this one, suddenly don't work anymore.</p>
+
+<p>Using the <strong>scipy</strong> example again, we know it depends on <strong>numpy</strong> and <strong>matplotlib</strong>, but also that it depends on numpy version >= 1.6 and matplotlib version >= 1.1. <strong>numpy</strong> version 1.5 in this case would not be sufficient.</p>
+
+<h2>Potential Challenges with Packages</h2>
+<p>There comes a time when one version of a package or the programming language is not enough anymore. An older tool depends on an older version of the programming language (e.g. Python 3.6), but many of the newer ones depend on a newer version (e.g. Python 3.10).</p>
+
+<p>We could have another computer or virtual machine (VM) to run the other version of the programming language, but this is not very efficient/sensible, since we may want to use the tools together in a workflow later on. Tadaa! <strong>Environments</strong> are one solution to the problem.</p>
+
+<p>We can install packages in isolated environments: these act as different "bubbles" that we can choose to use whenever we need them!</p>
+
+<h2>Environment</h2>
+<p>Imagine each environment as a greenhouse you setup for various plants (packages) you want to grow.</p>
+
+<p>It allows you to provide the desirable space for compatible packages, and most importantly, when the tools you want to use are not compatible, each can operate in a separate environment all found on the same server!</p>
+
+<p>It is like a big greenhouse with various rooms for different habitat requirements.</p>
+
+<div class="image-container">
+    <img src="Greenhouse.jpg" alt="Royal Botanic Gardens greenhouse">
+    <div class="caption">Royal Botanic Gardens greenhouse - different environments for different plants</div>
+</div>
+
+<p>So don't install everything into the (base) environment on Crop Diversity. Sooner or later an incompatibility will occur. Plus you probably don't want to upset the most basic functionalities.</p>
+
+<h2>Why Do We Need Environment Management</h2>
+<p>An environment management system attempts to solve compatibility issues, such as:</p>
+<ul>
+    <li>An application we need for a research project requires <strong> different versions </strong> of our base programming language or different versions of various third-party packages from the versions that we are currently using.</li>
+    <li>An application we developed as part of a previous research project that worked fine on our system <strong> six months ago </strong> now no longer works.</li>
+    <li>Codes that we have written for a joint research project works on our machine but not on <strong> our collaborators' </strong> machines.</li>
+    <li>An application that we are developing on our local machine doesn't provide the same results when run on our <strong> remote cluster </strong> (well we probably almost always work on a remote cluster).</li>
+</ul>
+
+<h2>What Can We Achieve Using Environment</h2>
+<p>An environment management system enables us to set up a new, project-specific, software environment containing specific Python versions (for example), as well as the versions of additional packages and required dependencies that are all mutually compatible.</p>
+
+<ul>
+    <li>Environment management systems help resolve dependency issues by allowing we to use <strong>different versions of a package for different projects.</strong>  </li>
+    <li>Make our projects self-contained and reproducible by <strong> capturing all package dependencies</strong>in a single requirements file.</li>
+    <li>Allow us to <strong> install packages on a host </strong> on which we do not have admin privileges.</li>
+</ul>
+
+<p>Conda is not the only way; Python for example has many more ways of working with environments (e.g. <a href="https://virtualenv.pypa.io/en/latest/">virtualenv</a>, <a href="https://pipenv.pypa.io/en/latest/">pipenv</a>, <a href="https://docs.python.org/3/library/venv.html">venv</a>, <a href="https://github.com/pyenv/pyenv">pyenv</a>...)</p>
+
+<p>But we got Conda on Crop Diversity and it's free to install, so...</p>
+
+<h2>Conda</h2>
+<p>From the <a href="https://conda.io/projects/conda/en/latest/index.html">official Conda documentation</a>:</p>
+
+<div class="important">
+<p><strong>Conda</strong> is an open-source package management system and environment management system that runs on Windows, macOS, and Linux. Conda quickly installs, runs, and updates packages and their dependencies. Conda easily creates, saves, loads, and switches between environments on our local computer. It was created for Python programs but it can package and distribute software for any language.</p>
+
+<p>Conda as a package manager helps us find and install packages. If we need a package that requires a different version of Python, we do not need to switch to a different environment manager because conda is also an environment manager. With just a few commands, we can set up a totally separate environment to run that different version of Python, while continuing to run our usual version of Python in our normal environment.</p>
+</div>
+
+<p>This is what we will do today.</p>
+
+<h2>Crop Diversity Setup</h2>
+<p>For the first time: <a href="https://help.cropdiversity.ac.uk/bioconda.html#installing-bioconda">Bioconda — Crop Diversity HPC Help documentation</a></p>
+
+<p>To install Bioconda, simply run: <code>install-bioconda</code> while logged into gruffalo. This will automatically download the necessary files for you, install it to an appropriate area, and then setup the correct channels for finding software for you. By default, it'll install channel information for Bioconda and conda-forge.</p>
+
+<p>Conda <strong>DOES</strong> has a default environment called <strong>base</strong> that includes a Python installation and some core system libraries and dependencies of Conda:</p>
+<ul>
+    <li>Once log in to Crop Diversity, you automatically <strong>activate</strong> the <strong>&lt;base&gt;</strong> environment by default.</li>
+    <li>This environment is also automatically <strong>activated</strong> when you start an interactive job using <strong>srun</strong> (<code>conda deactivate</code> to go back to the previous env)</li>
+</ul>
+
+<div class="warning">
+<strong>Important:</strong> However, we should <em>always</em> install packages for projects into an env other than &lt;base&gt;: it's just good practice, and minimises the risk of compromising our <strong>base</strong> installation.
+</div>
+
+<p>And don't install everything into just one env! The point of setting up environment is that we don't need to cram all the packages into one greenhouse.</p>
+
+<div class="code-block"><pre>
+# Some useful variables already setup:
+echo $HOME
+echo $SCRATCH
+echo $USER
+</pre></div>
+
+<h2>The Conda Basics</h2>
+
+<h3>What is a Conda Environment</h3>
+<p>A <a href="https://docs.conda.io/projects/conda/en/latest/user-guide/concepts/environments.html">Conda environment</a> is a directory that contains details of which packages, and what version numbers, are required; different environments, different packages. If you change one environment, our other environments are not affected. We can easily activate or deactivate environments, which is how we switch between them!</p>
+
+<h3>Starting with Conda</h3>
+<div class="code-block"><pre>
+# Presumably you are on Crop Diversity now
+
+# What version of conda is running?
+conda --version
+
+# How do we get help?
+conda --help
+# What do you see?
+
+# What environments are available?
+conda env list
+# Where is the base env?
+</pre></div>
+
+<h3>Make an Environment</h3>
+<p>Say we want to create a new environment for a Python project (or anything else), we just need the <strong>conda create</strong> command.</p>
+
+<p>It is a good idea to give our environment a meaningful name...</p>
+
+<div class="code-block"><pre>
+conda create --name my_first_env
+#of course we can specify more packages to install at the same time
+conda create --name python3-env python
+</pre></div>
+
+<p><em>What version of python is installed? What packages are installed?</em></p>
+
+<p>The command above will create a new Conda environment called "python3-env" and install, by default, the most recent version of Python. If we had wanted a specific version of Python, we could have issued a different command, e.g.:</p>
+
+<div class="code-block"><pre>conda create --name python3.8.6-env python=3.8.6</pre></div>
+
+<p>Where we can, it is a good idea to specify the version number of each package that we install into an environment; search to see what versions are available using the <strong>conda search</strong>, for example:</p>
+
+<div class="code-block"><pre>
+conda search scikit-learn
+# Goodness how many versions are there?
+conda search scikit-learn | wc -l
+</pre></div>
+
+<p>We can specify a lot of packages and their versions at once:</p>
+<div class="code-block"><pre>conda create --name basic-scipy-env ipython=7.13 matplotlib=3.1 numpy=1.18 scipy=1.4</pre></div>
+
+<h3>How Are Packages Installed?</h3>
+<div class="image-container">
+    <img src="Install_packages.png" alt="Conda package installation process">
+    <div class="caption">Conda package installation process flow</div>
+</div>
+
+<h3>Modify an Environment</h3>
+<p>It's okay if we don't install all the packages when creating the env, which is more often the case. Hence, we can add more packages as the project unfolds itself.</p>
+
+<p>We can rename a conda environment with the <strong>conda rename</strong> command. conda rename supports renaming our current environment, or any of our existing environments.</p>
+
+<div class="code-block"><pre>conda rename -n basic-scipy-env scipy-env</pre></div>
+
+<p><strong>We can keep installing new packages into our env:</strong></p>
+<div class="code-block"><pre>conda install -c bioconda samtools -y --name scipy-env</pre></div>
+<p><em>-y: this is very useful when recording your commands into a code, because it will run automatically without stopping to ask your permission to proceed</em></p>
+
+<p><strong>Task:</strong> try to install igv without -y</p>
+
+<p><strong>We can keep installing new packages into our env after we activate the env:</strong></p>
+<div class="code-block"><pre>
+conda activate $env_name
+conda install -c bioconda bamtools -y
+</pre></div>
+
+<div class="code-block"><pre>
+# What packages do we have in the basic-scipy-env environment?
+conda list --name scipy-env
+
+# What happens if you just do conda list without specifying an env?
+# What happens if you try to install a package that's already present in the env?
+</pre></div>
+
+<p><em>Note that when we install packages into an environment, conda will automatically install any dependencies that are required by the package we are installing.</em></p>
+<p>If you write down the code you used to create your environment, when you run the code again later, will the new environment be identical to the original one?</p>
+<div class="code-block"><pre>
+function setupt_env {
+env_name=$1
+
+#install mamba to base env
+conda install -c conda-forge mamba -y #conda-forge is a free channel we can use
+
+#make an env 
+conda create -n $env_name 
+#Install pip, samtools, NanoPlot, porechop, chopper
+conda install pip -y -n $env_name 
+conda install -c bioconda samtools -y -n $env_name #bioconda is a free channel we can use
+conda install -c bioconda nanoplot -y -n $env_name 
+conda install -c bioconda porechop -y -n $env_name 
+mamba install chopper -n $env_name -y
+mamba update chopper -n $env_name  -y
+}
+
+setupt_env
+
+</pre></div>
+
+
+
+<h3>Freezing Installed Packages</h3>
+<p>To prevent existing packages from being updated when using the <strong>conda install</strong> command, we can use the <strong>--freeze-installed</strong> option. This may force Conda to install older versions of the requested packages in order to maintain compatibility with previously installed packages. Using the <strong>--freeze-installed</strong> option does not prevent additional dependency packages from being installed.</p>
+
+<h3>Remove a Package from an Environment</h3>
+<p>To remove a package from an environment we can run the <strong>uninstall</strong> command. For example to remove the <strong>samtools</strong> package from the scipy-env environment we can do:</p>
+<div class="code-block"><pre>conda uninstall samtools --name scipy-env</pre></div>
+
+<h2>Where to Store the Environments</h2>
+<p>Naturally, we might want to keep our environments and packages in our home space on Crop Diversity, but as our <strong>${HOME}</strong> isn't very large, it tends to fill up and then <strong>bad things happen</strong>.</p>
+
+<p> Fortunately, we have other options. Conda is installed into the <em>apps</em> directory by default.</p>
+<div class="code-block"><pre>
+zchen@gruffalo:~$ ls
+apps  projects  scratch
+</pre></div>
+<p>after working for a few months my home directory still contains nothing but these 3 directories. you don't want to fill it up with code or data or anything worse. consider it the corridor before you enter rooms with different functions.
+    YOu don't want to block the corridor, do you? Plus it is really tidy (the head node)
+    </p>
+<div class="code-block"> <pre>
+    ls apps
+bzip2-1.0.6  conda  env  manual  MISA  PanSyn  pkg  Platanus_allee_v2.2.2_Linux_x86_64  R-4.5.0 
+
+ls apps/conda/
+bin                 _conda          envs     gddiag.png  lib64        metadata_conda_debug.yaml  README.tutorials  ssl      x86_64-conda_cos6-linux-gnu
+build_env_setup.sh  condabin        error    include     libexec      opt                        README.windows    SUPPORT  x86_64-conda-linux-gnu
+CHANGES             conda_build.sh  etc      INSTALL     LICENSE      pkgs                       sbin              tiles    zulu8.15.0.1-jdk8.0.92-linux_x64.tar.gz
+CITATION            conda-meta      example  jre         LICENSE.txt  README                     share             TODO
+compiler_compat     data            fonts    lib         man          README.tools               shell             var
+
+ls apps/conda/envs/ #where all the environments are stored
+annotation  braker  captus   flongle_test  ITS_mining  ksrates  plastome_assembly  ragtag      salix         skmer
+Blast       Busco   easy353  hybpiper      jupyter     minion   primer3            RNA_polish  samtools-env  snps_test
+
+ls apps/conda/bin/ #where all the packages are installed
+'['                             ds2pme                  jsondiff                   perldoc                       spades-gbuilder
+ 2to3                           du                      jsonl2xml                  perlivp                       spades-gfa-split
+ 2to3-3.12                      dumpsolv                jsonpatch                  perlthanks                    spades-gmapper
+ ABYSS                          dustmasker              jsonpointer                phrase-search                 spades-gsimplifier
+ abyss-align                    echo                    json_pp                    piconv                        spades-hammer
+ abyss-bloom                    ecommon.sh              json_xs                    pigz                          spades-hpc
+ abyss-bloom-dbg                efetch                  jstack                     pinky                         spades_init.py
+ abyss-bloom-dist.mk            efilter                 jstat                      pip                           spades-ionhammer
+ abyss-bloom-dist.mk.Makefile   einfo                   jstatd                     pip3                          spades-kmercount
+ abyss-bowtie                   eject                   just-top-hits              pipesz                        spades-kmer-estimating
+ abyss-bowtie2                  elink                   k5srvutil                  pkgdata                       spades.py
+ abyss-bwa                      enc2xs                  k8                         pl2bat.pl                     spades-read-filter
+ abyss-bwamem                   encguess                kadmin                     pl2pm                         spaligner
+ abyss-bwasw                    enosys                  KAligner                   plasmidspades.py              spdi2tbl
+ abyss-db-txt                   env                     kdestroy                   plot-ampliconstats            splain
+ abyss-dida                     epost                   keyctl                     plot-bamstats                 split
+ abyss-fac                      esample                 keytool                    pma2apa                       split-at-intron
+ abyss-fatoagp                  esearch                 kill                       pma2pme                       split_fa
+ abyss-filtergraph              esummary                kinit                      pmc2bioc                      split_fa.o
+ abyss-fixmate                  exact-tandems           klist                      pmc2info                      split_fq
+ abyss-fixmate-ssq              exch                    konnector                  pngfix                        split_fq.o
+ abyss-gapfill                  exclude-uid-lists       kpasswd                    png-fix-itxt                  split_scaffold
+ abyss-gc                       expand                  krb5-config                pngtogd                       split_scaffold.o
+ abyss-index                    expandCols              ksu                        pngtogd2                      sqlite3_analyzer
+ abyss-junction                 expand-current          kswitch                    pod2html                      stat
+ abyss-kaligner                 export2sam.pl           ktutil                     pod2man                       stdbuf
+ abyss-layout                   expr                    kvno                       pod2text                      stream-local
+ abyss-longseqdist              extcheck                last                       pod2usage                     stream-pubmed
+ abyss-map                      f2py                    lastb                      podchecker                    streamzip
+ abyss-map-ssq                  fa2fq                   lastlog2                   policytool                    stty
+ abyss-mergepairs               fa2fq.o                 legacy_blast.pl            PopBubbles                    subtractBed
+ abyss-overlap                  factor                  lftp                       ppm2tiff                      sum
+ ABYSS-P                        fadvise                 lftpget                    pr                            sync
+ abyss-paired-dbg               fallocate               libdeflate-gunzip          print-columns                 systematic-mutations
+ abyss-paired-dbg-mpi           false                   libdeflate-gzip            printenv                      tabix
+ abyss-pe                       fastaFromBed            libnetcfg                  printf                        tabs
+ abyss-pe.Makefile              fasta-sanitize.pl       libpng16-config            print_graph                   tac
+ abyss-rresolver-short          fastqc                  libpng-config              print_graph.o                 tagBam
+ abyss-samtoafg                 fax2ps                  link                       prlimit                       tail
+ abyss-scaffold                 fax2tiff                linkicc                    profile2mat.pl                tar
+ abyss-sealer                   fc-cache                linksBed                   project_tree_builder          taskset
+ abyss-stack-size               fc-cat                  linux32                    promer                        tbl2prod
+ abyss-tabtomd                  fc-conflist             linux64                    prove                         tbl2xml
+ abyss-todot                    fc-list                 list.modules               psiblast                      tblastn
+ abyss-tofastq                  fc-match                ln                         psicc                         tblastn_vdb
+ accn-at-a-time                 fc-pattern              logcounter                 psl2sam.pl                    tblastx
+...
+
+ # How much "stuff" is in my envs folder?
+# Use the du command to find out (takes a while...)
+du -hc --max-depth 1 apps/conda/envs/
+2.8G    apps/env/captus
+3.4G    apps/env/flongle_test
+1.8G    apps/env/skmer
+627M    apps/env/braker
+1.1G    apps/env/Busco
+1.5G    apps/env/plastome_assembly
+183M    apps/env/ragtag
+972M    apps/env/ksrates
+1.2G    apps/env/ITS_mining
+594M    apps/env/snps_test
+3.1G    apps/env/annotation
+116K    apps/env/.git
+414M    apps/env/jupyter
+2.8G    apps/env/minion
+55M     apps/env/samtools-env
+1.6G    apps/env/salix
+..
+#apparently environments are not small things to keep. so you might consider to create env usable by different projects rather than one env per project
+</pre></div>
+
+<div class="tip">
+Your stuff won't get erased from apps, and they do not count towards your storage quota, but files on <strong> projects and stratch </strong>do (if you have too many files, <strong>your ability to run jobs on slurm will be severely limited, 1 job/time for instance</strong>).
+Hence you can install other packages there even if they are cannot be directly installd with conda (e.g. manual installation from source code).
+I created a directory called conda_envs in apps to keep all my packages from source (e.g. github), highly recommend.
+</div>
+
+
+
+<h3>Deleting Entire Environments</h3>
+<div class="code-block"><pre>
+# Occasionally, we need to delete an entire environment, luckily it is easy.
+conda create --name to_be_deleted
+conda remove --name to_be_deleted --all
+
+# A different method?
+# or of course you can rm -rf the directory once you know where it is,
+# but if you do so, can you still see the env in conda env list?
+</pre></div>
+
+<h2>The Configuration File: .condarc</h2>
+<p><em>Yes there's actually a dot there, not a typo.</em> The dot keeps the file 'hidden' from <code>ls</code>, but you can force it to appear with <code>ls -al</code>.</p>
+
+<p>A user's conda settings are stored in the runtime configuration file, <strong>.condarc</strong>. This file allows users to configure various aspects of conda including:</p>
+<ul>
+    <li>Where conda looks for packages (channels)</li>
+    <li>Where conda lists known environments (envs_dirs)</li>
+    <li>Whether to update the Bash prompt with the currently activated environment name (env_prompt)</li>
+    <li>What default packages or features to include in new environments (create_default_packages)</li>
+</ul>
+
+<h2>How Do We Organize the Work Directories?</h2>
+<p>Use my own work directory as an example:</p>
+<p><em>Do we actually need to be in the same directory as the results?</em></p>
+<p><em>And please don't put results from different steps in the same directory...</em></p>
+<p><em>And separate results and data...</em></p>
+<p><em>How can we easily display the 'layers' of results that reflect the process of our analysis?</em></p>
+
+<p>A simple but organized layout improves reusability of your SOP and codes:</p>
+
+<div class="code-block"><pre>
+zchen@gruffalo:~$ ls scratch
+Array_test      Barcoding_km  G_pneumonanthe   lichen_ITS_mining           maternity_cover          private  WFO_visualization
+auto-purge.txt  Bryophyte     Lichen_database  list_of_plant_families.txt  plebeja_assembly_202505  SNPS
+zchen@gruffalo:~$ ls scratch/Bryophyte/
+barcode_20251013  barcode_20251104
+zchen@gruffalo:~$ ls scratch/Bryophyte/barcode_20251104
+02_BLAST  03_LOCI  04_ALIGNMENT  05_ALIGN_NO_SPACE  06_ALIGN_RENAME
+#this way results from different steps are clearly separated
+</pre></div>
+
+<h3>Where Do We Keep the Scripts?</h3>
+<div class="tip"><pre>
+Can they stay safe forever on scratch?
+
+Actually, you can keep all your scripts in projects, run them,
+and keep the intermediate results in scratch
+
+One way or the other, better to keep them in one directory...
+they got no reason to be mixed with results anyway
+
+And it's probably time to use backup the scripts onto GitHub...
+if you keep all the scripts for one project in one directory, it's easy to git init there
+</pre></div>
+<h3>A summary for where things should go</h3>
+<div class="tip"><pre>
+<strong> apps</strong>
+<li>conda environment</li>
+<li>packages from source code</li>
+<strong>projects:</strong>  
+<li>all your scripts</li>
+<li>metadata</li>
+<li>perhaps your raw data (they should go permanently in DataHeap)</li>  
+<li>perhaps your final results (they should go permanently somewhere for sure)</li>
+<strong>scratch:</strong>   
+<li>perhaps your raw data</li>
+<li>intermediate files</li>
+<li>temporary files</li>
+<li>anything that can be regenerated</li>
+</pre></div>
+<h3>A typical project forlder in your projects directory should contain: </h3>
+<div class="tip"><pre>
+<li>all your scripts</li>
+<li>perhaps your raw data if you want to keep them here instead of on scratch</li>
+<li>metadata</li>
+<li>perhaps your final results (they should go permanently somewhere for sure)</li>
+<li>local git repository: git init</li>
+<li>optional: a README file to explain what the project is about</li>
+</pre></div>
+<div class="code-block"><pre>
+zchen@gruffalo:~$ ls projects/rbge/zedchen/barcoding/
+potamogeton_20250714  Python_scripts  salix_betula_inger  salix_combined  salix_new_20250702  salix_new_20250910  salix_new_28  salix_sanger_47
+
+zchen@gruffalo:~$ ls projects/rbge/zedchen/barcoding/potamogeton_20250714/
+contamination_test_scripts  potamogeton_chromosome_DToL.csv  potamogeton_chromosome_DToL.tsv  results  scripts  SNP_scripts
+
+zchen@gruffalo:~$ ls projects/rbge/zedchen/barcoding/potamogeton_20250714/scripts/
+blast_1-2.txt        extract_marker.sh                  pota_carpus_phylogeny.sh        pota_easy353_single.sh     pot_rbcl_refs.fa                  rename_files.py
+BUSCO_SOP-pota.sh    extract_markers.py                 pota_cleaning_QC.sh             pota_iqtree_phy.sh         PpusilusxPberchtoldii_rbcl.fasta
+cleanup.sh           out.log                            pota_easy353_array.sh           pota_plastome_assembly.sh  READ_ME_potamogeton.txt
+count_mono.py        Pcrispus_GCA_965783375-Pltd.fasta  pota_easy353_filtered_array.sh  pota_plastome_phy.sh       remove_highlyhetero.py
+EASY353_SOP-Pota.sh  plastome_SOP-pota.sh               pota_easy353_gene_array.sh      pot_ITS_refs.fa            remove_taxa.py
+
+zchen@gruffalo:~$ ls projects/rbge/zedchen/barcoding/potamogeton_20250714/results/
+qc2_fastp #i keep my cleaned reads here as long as I'm still using them instead of just intermediate files
+
+#this keeps your project directory tidy and easy to navigate, and small:
+zchen@gruffalo:~$ du -hc --max-depth 1 projects/rbge/zedchen/barcoding/potamogeton_20250714/scripts/
+264K    projects/rbge/zedchen/barcoding/potamogeton_20250714/scripts/
+264K    total
+
+zchen@gruffalo:~$ du -hc --max-depth 1 projects/rbge/zedchen/barcoding/potamogeton_20250714/
+609G    projects/rbge/zedchen/barcoding/potamogeton_20250714/results #the biggest folder contains the cleaned reads
+3.2M    projects/rbge/zedchen/barcoding/potamogeton_20250714/SNP_scripts
+264K    projects/rbge/zedchen/barcoding/potamogeton_20250714/scripts
+138K    projects/rbge/zedchen/barcoding/potamogeton_20250714/contamination_test_scripts
+609G    projects/rbge/zedchen/barcoding/potamogeton_20250714/
+609G    total
+</pre>
+</div>
+<h3>Basic logic behind your scripts</h3>
+<div class="tip"><pre>
+    <strong>what/where (input) </strong>
+    <li> raw data paths</li>
+    <li> metadata paths</li>
+    <li> parameters </li>
+    <li> tool paths </li>
+    <li> intermediate/output paths </li>
+    <strong> how (code) </strong>
+    <li> load packages </li>
+    <li> define functions </li>
+    <li> main code body </li>
+    
+</pre></div>
+<h3>A typiclal script template</h3>
+<div class="code-block"><pre>
+#SBATCH --export=ALL
+#SBATCH --partition=short #default is medium. Use short for jobs under 2 hours
+#SBATCH --array=2-9         # Run tasks 1 through 10
+#SBATCH --cpus-per-task=4     # Request 4 CPUs per task
+#SBATCH --mem=200K              # we don't need much memory for this
+#SBATCH --output=slurm-%A_%a.out  # %A=jobID, %a=taskID
+
+function process_barcode {
+
+INDIR=$1
+OUTDIR=$2
+
+INPUT=$(printf "barcode_%02d" ${SLURM_ARRAY_TASK_ID})
+echo "Processing ${INPUT}.fastq"
+head -n 1 ${INDIR}/${INPUT}.fastq > ${OUTDIR}/${INPUT}.head  #just print the first line as a test
+
+}
+
+function read_count {
+
+SAMPLE=$1
+INDIR=$2
+OUTDIR=$3
+
+echo $SAMPLE
+R1=${SAMPLE}_1.fq.gz
+R2=${SAMPLE}_2.fq.gz #this bit you need to modify according to your file naming convention
+echo "Processing pair-end reads for ${SAMPLE}"
+zcat ${INDIR}/${R1}|egrep -c '^\+$' > ${OUTDIR}/${SAMPLE}_read_count.txt #why are we using > here?
+zcat ${INDIR}/${R2}|egrep -c '^\+$' >> ${OUTDIR}/${SAMPLE}_read_count.txt #why are we using >> here?
+
+}
+
+function main {
+# specify the paths to data, Metadata, and outputs
+DATA=$HOME/projects/rbge/zedchen/workshop/slurm_array_practice/mock_data_fq   
+# Metadata file
+METADATA=$HOME/projects/rbge/zedchen/workshop/slurm_array_practice/mock_data_fq/mock_metadata.csv
+#WORK directories
+WORKDIR=$SCRATCH/Array_test #your working directory for this exercise
+RESULT1=$WORKDIR/01_test_output
+RESULT2=$WORKDIR/02_read_count
+
+#SLURM_ARRAY_TASK_ID=2
+#setup
+function setup_dir {
+
+mkdir $WORKDIR -p
+mkdir $RESULT1 -p
+mkdir $RESULT2 -p
+}
+
+setup_dir
+
+#DEFINE SAMPLE NAME
+SAMPLE=$(sed -n "${SLURM_ARRAY_TASK_ID}p" ${METADATA} | cut -d',' -f1)
+echo $SAMPLE
+
+#EXECUTE
+read_count $SAMPLE $DATA $RESULT2
+}
+
+main
+</pre></div>
+
+</body>
+</html>
