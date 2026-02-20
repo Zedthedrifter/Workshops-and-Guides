@@ -450,6 +450,7 @@ wget -nc -P $OUTDIR ftp://ftp.sra.ebi.ac.uk/vol1/fastq/ERR776/ERR776790/ERR77679
 </div>
 
 <h3>2. Read Trimming & QC: <code>fastp_qc</code></h3>
+
 <p>This function replaces legacy tools like Trimmomatic. The parameters below are selected for a balance between stringency and data retention, crucial for target capture where reads are short.</p>
 
 <div class="code-block">
@@ -573,6 +574,12 @@ function fastp_qc {
 </div>
 
 <h3>3. Mapping: <code>bwa_map</code> vs <code>bowtie2_map</code></h3>
+<div class="tip"> 
+    We had an update for the cleaning up step. for the capture steps, there are more ready-to-use pipelines and tools, such as Captus, EASY353, and HybPiper. 
+    But it is still good to know the underlying logics, which also gives you more flexibility to customize your pipeline.
+    Besides, bam files and vcf files are common formats for storing mapping and variant calling results, which are also widely used in other types of sequencing data. 
+    So it is good to know how to generate them from raw data, i.e. via mapping and variant calling.
+</div>
 <p>Both functions are provided, but BWA-MEM is recommended for its sensitivity with indels and its status as the standard for variant calling.</p>
 <div class="code-block">
 function bwa_map {
@@ -594,39 +601,439 @@ function bwa_map {
     </ul>
 </div>
 
-<h3>4. Variant Calling & Filtering</h3>
-<div class="code-block">
-function snp_calling {
-    INDIR=$1; OUTDIR=$2; REF=$3; SAMPLE=$4
-    minQ=20; minDP=10
-    bcftools mpileup -Ou -f $REF $INDIR/${SAMPLE}.sorted.bam --threads 8 \
-        --annotate INFO/AD,FORMAT/DP,FORMAT/AD |\
-        bcftools call -Ou -mv |\
-        bcftools filter -s LowQual -e "QUAL<${minQ} || INFO/DP<${minDP}" \
-        > $OUTDIR/${SAMPLE}.flt1.vcf
-}
+<h2>Target Capture Data Processing Pipeline</h2>
+    
+    <h3>SNP Calling and Filtering Pipeline</h3>
+    
+    <p>This section details the variant calling and filtering process using <code>bcftools</code>. The pipeline is implemented as a bash function that processes a single sample at a time, applying multiple quality filters to ensure high-confidence SNP calls.</p>
 
-function bcftools_filter {
-    INDIR=$1; OUTDIR=$2; SAMPLE=$3
-    bcftools view $INDIR/${SAMPLE}.flt1.vcf -O u 2>/dev/null |\
-    bcftools +fill-tags -- -t AC,AN,AF,MAF,HWE |\
-    bcftools filter -e "QUAL<30" |\
-    bcftools filter -e 'INFO/MAF[0] < 0.01' |\
-    bcftools filter -e 'INFO/MQ < 30' |\
-    bcftools filter -e 'INFO/VDB < 0.1' -Oz -o $OUTDIR/${SAMPLE}.flt3.vcf.gz
-    bcftools index $OUTDIR/${SAMPLE}.flt3.vcf.gz -f
+    <div class="tip">
+        <strong>🔍 Key Concept:</strong> The pipeline uses a series of piped commands, each applying a specific filter or transformation. This modular approach allows for easy modification and understanding of each filtering step.
+    </div>
+
+    <h3>The SNP Calling Function</h3>
+    
+    <div class="code-block">
+function snp_calling {
+    INDIR=$1
+    OUTDIR=$2
+    REF=$3
+    SAMPLE=$4
+
+    minQ=20
+    minDP=10
+
+    echo 'Calling SNPs...'
+    
+    bcftools mpileup -Ou -f $REF $INDIR/${SAMPLE}.sorted.bam --threads 8 \
+                     --annotate INFO/AD,FORMAT/DP,FORMAT/AD \
+    | bcftools call -Ou -mv \
+    | bcftools view -i '1==1' 2>/dev/null \
+    | bcftools filter -e "QUAL&lt;${minQ} || INFO/DP&lt;${minDP}" \
+    | bcftools +fill-tags -- -t AC,AN,AF,MAF,HWE \
+    | bcftools filter -e "QUAL&lt;30" \
+    | bcftools filter -e 'INFO/MAF[0] &lt; 0.01' \
+    | bcftools filter -e 'INFO/MQ &lt; 30' \
+    | bcftools filter -e 'INFO/VDB &lt; 0.1' -Oz -o $OUTDIR/${SAMPLE}.flt.vcf.gz
+
+    echo "Indexing filtered VCF..."
+    bcftools index $OUTDIR/${SAMPLE}.flt.vcf.gz -f
 }
+    </div>
+
+    <h3>Pipeline Steps Explained</h3>
+    
+    <div class="filter-step">
+        <h4>Step 1: mpileup - Generating Raw Variant Calls</h4>
+        <div class="code-block">bcftools mpileup -Ou -f $REF $INDIR/${SAMPLE}.sorted.bam --threads 8 --annotate INFO/AD,FORMAT/DP,FORMAT/AD</div>
+        <ul>
+            <li><strong>-Ou:</strong> Output in uncompressed BCF format (faster piping)</li>
+            <li><strong>-f $REF:</strong> Reference genome in FASTA format</li>
+            <li><strong>--threads 8:</strong> Use 8 CPU threads for parallel processing</li>
+            <li><strong>--annotate:</strong> Add additional information fields:
+                <ul>
+                    <li><code>INFO/AD</code>: Allelic depth at variant sites</li>
+                    <li><code>FORMAT/DP</code>: Per-sample read depth</li>
+                    <li><code>FORMAT/AD</code>: Per-sample allelic depth</li>
+                </ul>
+            </li>
+        </ul>
+    </div>
+
+    <div class="filter-step">
+        <h4>Step 2: call - Initial Variant Calling</h4>
+        <div class="code-block">bcftools call -Ou -mv</div>
+        <ul>
+            <li><strong>-mv:</strong> Multiallelic variant calling mode</li>
+            <li><strong>-Ou:</strong> Continue with uncompressed output for piping</li>
+            <li><strong>What it does:</strong> Identifies variant sites from the mpileup output using a Bayesian model</li>
+        </ul>
+    </div>
+
+    <div class="filter-step">
+        <h4>Step 3: view - Passthrough (Placeholder)</h4>
+        <div class="code-block">bcftools view -i '1==1' 2>/dev/null</div>
+        <ul>
+            <li><strong>-i '1==1':</strong> Always true condition - passes all variants through unchanged</li>
+            <li><strong>2>/dev/null:</strong> Suppresses warning messages</li>
+            <li><strong>Note:</strong> This step acts as a placeholder for future filtering or for maintaining pipeline structure</li>
+        </ul>
+    </div>
+
+    <div class="filter-step">
+        <h4>Step 4: Initial Quality and Depth Filter</h4>
+        <div class="code-block">bcftools filter -e "QUAL&lt;${minQ} || INFO/DP&lt;${minDP}"</div>
+        <ul>
+            <li><strong>QUAL &lt; ${minQ}:</strong> Remove variants with quality score below 20</li>
+            <li><strong>INFO/DP &lt; ${minDP}:</strong> Remove variants with total depth below 10 reads</li>
+            <li><strong>Why:</strong> Low quality or low depth variants are more likely to be sequencing errors. </li>
+            <li> These parameters need to be <strong>adjusted</strong> to the sequencing platform and coverage depth of your dataset.</li>
+        </ul>
+    </div>
+
+    <div class="filter-step">
+        <h4>Step 5: fill-tags - Calculate Population Genetics Statistics</h4>
+        <div class="code-block">bcftools +fill-tags -- -t AC,AN,AF,MAF,HWE</div>
+        <ul>
+            <li><strong>+fill-tags:</strong> A bcftools plugin that calculates various statistics</li>
+            <li><strong>-t AC,AN,AF,MAF,HWE:</strong> Tags to calculate:
+                <ul>
+                    <li><code>AC</code>: Allele count</li>
+                    <li><code>AN</code>: Total number of alleles</li>
+                    <li><code>AF</code>: Allele frequency</li>
+                    <li><code>MAF</code>: Minor allele frequency</li>
+                    <li><code>HWE</code>: Hardy-Weinberg equilibrium p-value</li>
+                </ul>
+            </li>
+        </ul>
+    </div>
+
+
+    <div class="filter-step">
+        <h4>Step 6: Minor Allele Frequency Filter</h4>
+        <div class="code-block">bcftools filter -e 'INFO/MAF[0] &lt; 0.01'</div>
+        <ul>
+            <li><strong>MAF[0] &lt; 0.01:</strong> Remove variants with minor allele frequency below 1%</li>
+            <li><strong>Note:</strong> The <code>[0]</code> indexes the first alternate allele</li>
+            <li> This one is actually not doing much if you are working with only one sample. It's very helpful for multi-sample SNP calling when you want to ignore sample specific SNPs.</li>
+        </ul>
+    </div>
+
+    <div class="filter-step">
+        <h4>Step 7: Mapping Quality Filter</h4>
+        <div class="code-block">bcftools filter -e 'INFO/MQ &lt; 30'</div>
+        <ul>
+            <li><strong>MQ &lt; 30:</strong> Remove variants with mean mapping quality below 30</li>
+            <li><strong>Why:</strong> Low mapping quality suggests reads may map to multiple locations (repetitive regions)</li>
+        </ul>
+    </div>
+
+    <div class="filter-step">
+        <h4>Step 8: Variant Distance Bias Filter</h4>
+        <div class="code-block">bcftools filter -e 'INFO/VDB &lt; 0.1' -Oz -o $OUTDIR/${SAMPLE}.flt.vcf.gz</div>
+        <ul>
+            <li><strong>VDB &lt; 0.1:</strong> Remove variants with variant distance bias below 0.1</li>
+            <li><strong>VDB:</strong> Measures if variant position bias exists along the read (0-1, higher is better)</li>
+            <li><strong>-Oz:</strong> Output compressed VCF format</li>
+            <li><strong>-o:</strong> Output file path</li>
+        </ul>
+    </div>
+
+    <div class="important">
+        <h4>📊 Summary of Filtering Parameters</h4>
+        <table>
+            <tr>
+                <th>Filter</th>
+                <th>Threshold</th>
+                <th>Purpose</th>
+            </tr>
+            <tr>
+                <td>Quality (QUAL)</td>
+                <td>≥ 30</td>
+                <td>Ensure high confidence in variant call (99.9% accuracy)</td>
+            </tr>
+            <tr>
+                <td>Depth (DP)</td>
+                <td>≥ 10</td>
+                <td>Sufficient read coverage for reliable calling</td>
+            </tr>
+            <tr>
+                <td>Minor Allele Frequency (MAF)</td>
+                <td>≥ 0.01</td>
+                <td>Remove extremely rare variants (potential errors)</td>
+            </tr>
+            <tr>
+                <td>Mapping Quality (MQ)</td>
+                <td>≥ 30</td>
+                <td>Ensure reads map uniquely to the genome</td>
+            </tr>
+            <tr>
+                <td>Variant Distance Bias (VDB)</td>
+                <td>≥ 0.1</td>
+                <td>Avoid positional bias along reads</td>
+            </tr>
+        </table>
+    </div>
+
+    <div class="tip">
+        <h4>💡 Pipeline Design Considerations</h4>
+        <ul>
+            <li><strong>Progressive filtering:</strong> Each filter removes problematic variants, building confidence step by step</li>
+            <li><strong>Reusable function:</strong> The function can be called for multiple samples, ensuring consistent processing</li>
+            <li><strong>Efficient piping:</strong> Using <code>-Ou</code> keeps data in uncompressed format between steps, avoiding costly compression/decompression</li>
+            <li><strong>Variable thresholds:</strong> <code>minQ</code> and <code>minDP</code> are set as variables for easy adjustment. can do that for other parameters too.</li>
+        </ul>
+    </div>
+
+    <div class="warning">
+        <h4>⚠️ Important Notes for Target Capture Data</h4>
+        <ul>
+            <li><strong>Depth considerations:</strong> Target capture can have variable depth across regions. Consider adjusting <code>minDP</code> based on your capture efficiency.</li>
+            <li><strong>MAF thresholds:</strong> With small sample sizes, rare variants might be genuine. Adjust MAF threshold based on your research questions.</li>
+            <li><strong>Single-sample calling:</strong> This pipeline calls variants per sample. For population studies, consider joint calling across all samples simultaneously.</li>
+        </ul>
+    </div>
+
+    <h3>Alternative: Multi-sample Calling</h3>
+    
+    <p>The commented line in the function shows how to adapt this for multiple samples:</p>
+    
+    <div class="code-block">
+# Create a list of BAM files for multi-sample calling
+ls $INDIR/*sorted.bam > bamlist.txt
+
+# Multi-sample calling using --bam-list
+bcftools mpileup -Ou -f $REF --bam-list bamlist.txt --threads 8 \
+                 --annotate INFO/AD,FORMAT/DP,FORMAT/AD \
+    | bcftools call -Ou -mv \
+    | [rest of filtering steps]
+    </div>
+
+<h2>Consensus Sequence Extraction Pipeline</h2>
+
+<p>This section details the process of extracting consensus sequences from variant calls. The pipeline generates a sample-specific consensus genome by integrating information from the reference genome, variant calls, and sequencing depth information.</p>
+
+<div class="tip">
+    <strong>🎯 Key Concept:</strong> Consensus sequences represent the most likely sequence for each sample, incorporating called variants while masking regions where we lack confidence due to low coverage.
 </div>
-<div class="important">
-    <strong>⚠️ Filtering Logic:</strong>
+
+<h3>The Consensus Extraction Function</h3>
+
+<div class="code-block">
+function extract_consensus { 
+    BAMINDIR=$1
+    VCFINDIR=$2
+    OUTDIR=$3
+    REF=$4
+    SAMPLE=$5
+
+    echo "EXTRACT CONSENSUS SEQUENCE FROM $REF REF AND $SAMPLE"
+
+    MIN_COVERAGE=2
+    BAM_FILE=$BAMINDIR/${SAMPLE}.sorted.bam
+
+    mkdir ${OUTDIR}/${SAMPLE}
+    
+    for HEADING in $(grep '>' $REF)
+    do
+        CHRM=${HEADING/>/}
+        echo "Processing $CHRM ..."
+        
+        # Create temporary directory
+        mkdir ${OUTDIR}/${CHRM}_${SAMPLE}_tmp
+        
+        # Mark low coverage areas
+        samtools depth -a -r $CHRM $BAM_FILE | \
+            awk -v min="$MIN_COVERAGE" '$3 &lt; min {print $1"\t"$2-1"\t"$2}' > \
+            ${OUTDIR}/${CHRM}_${SAMPLE}_tmp/low_coverage.bed
+        
+        # Generate consensus for this sample
+        samtools faidx $REF $CHRM | \
+            bcftools consensus -s ${SAMPLE} $VCFINDIR/${SAMPLE}.flt3.vcf.gz \
+                               -I \
+                               --mask ${OUTDIR}/${CHRM}_${SAMPLE}_tmp/low_coverage.bed \
+                               -o ${OUTDIR}/${CHRM}_${SAMPLE}_tmp/${SAMPLE}.fasta
+          
+        # Add sample name to header
+        sed -i "1s/^>.*/>${SAMPLE}/" ${OUTDIR}/${CHRM}_${SAMPLE}_tmp/${SAMPLE}.fasta
+        
+        # Collect results
+        cp ${OUTDIR}/${CHRM}_${SAMPLE}_tmp/${SAMPLE}.fasta ${OUTDIR}/${SAMPLE}/${CHRM}.fasta
+        
+        # Clean up temporary files
+        rm -rf ${OUTDIR}/${CHRM}_${SAMPLE}_tmp
+    done
+}
+    </div>
+
+<h3>Pipeline Steps Explained</h3>
+
+<div class="filter-step">
+    <h4>Step 1: Setup and Directory Structure</h4>
+    <div class="code-block">mkdir ${OUTDIR}/${SAMPLE}</div>
     <ul>
-        <li><code>minQ=20</code>: Initial hard filter on raw QUAL score.</li>
-        <li><code>minDP=10</code>: Minimum read depth at a site.</li>
-        <li><code>MAF[0] < 0.01</code>: Removes rare variants (Minor Allele Frequency < 1%).</li>
-        <li><code>MQ < 30</code>: Removes sites with low mapping quality.</li>
-        <li><code>VDB < 0.1</code>: Filters based on Variant Distance Bias, removing likely false positives.</li>
+        <li><strong>Purpose:</strong> Creates a sample-specific output directory</li>
+        <li><strong>Organization:</strong> Each sample gets its own folder containing consensus sequences for all chromosomes/contigs</li>
     </ul>
 </div>
+
+<div class="filter-step">
+    <h4>Step 2: Iterate Over Reference Sequences</h4>
+    <div class="code-block">for HEADING in $(grep '>' $REF)</div>
+    <ul>
+        <li><strong>Function:</strong> Extracts all sequence headers from the reference FASTA</li>
+        <li><strong>CHRM=${HEADING/>/}:</strong> Removes the '>' character to get clean chromosome/contig names</li>
+        <li><strong>Why:</strong> Processes each chromosome/contig independently to manage memory and enable parallel processing</li>
+    </ul>
+</div>
+
+<div class="filter-step">
+    <h4>Step 3: Temporary Directory Creation</h4>
+    <div class="code-block">mkdir ${OUTDIR}/${CHRM}_${SAMPLE}_tmp</div>
+    <ul>
+        <li><strong>Purpose:</strong> Creates chromosome-specific temporary directories</li>
+        <li><strong>Why unique directories:</strong> Prevents file conflicts when processing multiple chromosomes simultaneously</li>
+        <li><strong>Note:</strong> Each chromosome gets its own temp space for intermediate files</li>
+    </ul>
+</div>
+
+<div class="filter-step">
+    <h4>Step 4: Identify Low Coverage Regions</h4>
+    <div class="code-block">samtools depth -a -r $CHRM $BAM_FILE | awk -v min="$MIN_COVERAGE" '$3 &lt; min {print $1"\t"$2-1"\t"$2}' > low_coverage.bed</div>
+    <ul>
+        <li><strong>samtools depth -a:</strong> Calculates depth at every position (-a includes zero-depth positions)</li>
+        <li><strong>-r $CHRM:</strong> Restricts analysis to current chromosome</li>
+        <li><strong>awk filter:</strong> Identifies positions where depth &lt; MIN_COVERAGE (set to 2)</li>
+        <li><strong>BED format:</strong> Outputs regions as 0-based intervals: <code>chromosome start end</code></li>
+        <li><strong>Why $2-1:</strong> Converts 1-based positions to 0-based BED format</li>
+    </ul>
+    
+    <div class="important">
+        <h4>📊 Example of low_coverage.bed</h4>
+        <div class="code-block" style="background-color: #f8f9fa; color: #333;">
+ENA|OZ297169|OZ297169.1 99      100
+ENA|OZ297169|OZ297169.1 145     146
+ENA|OZ297169|OZ297169.1 146     147
+        </div>
+        <p>Each line represents a single base position with &lt;2x coverage that will be masked.</p>
+    </div>
+</div>
+
+<div class="filter-step">
+    <h4>Step 5: Generate Consensus Sequence</h4>
+    <div class="code-block">samtools faidx $REF $CHRM | bcftools consensus -s ${SAMPLE} $VCFINDIR/${SAMPLE}.flt3.vcf.gz -I --mask low_coverage.bed -o ${SAMPLE}.fasta</div>
+    
+    <h5>Part A: Extract Reference Sequence</h5>
+    <div class="code-block">samtools faidx $REF $CHRM</div>
+    <ul>
+        <li><strong>faidx:</strong> Indexed FASTA access - extracts specific chromosome sequence</li>
+        <li><strong>Output:</strong> FASTA format sequence for the current chromosome</li>
+    </ul>
+    
+    <h5>Part B: Apply Variants and Masks</h5>
+    <div class="code-block">bcftools consensus -s ${SAMPLE} $VCFINDIR/${SAMPLE}.flt3.vcf.gz -I --mask low_coverage.bed</div>
+    <ul>
+        <li><strong>-s ${SAMPLE}:</strong> Specifies which sample to use from the VCF</li>
+        <li><strong>-I:</strong> Ignore missing genotypes (treat as reference)</li>
+        <li><strong>--mask low_coverage.bed:</strong> Replace regions in BED file with 'N' (ambiguous bases)</li>
+        <li><strong>What it does:</strong> 
+            <ul>
+                <li>Starts with reference sequence</li>
+                <li>Applies all variant calls for this sample</li>
+                <li>Masks low coverage regions with 'N'</li>
+                <li>Outputs final consensus sequence</li>
+            </ul>
+        </li>
+    </ul>
+</div>
+
+<div class="filter-step">
+    <h4>Step 6: Update FASTA Header</h4>
+    <div class="code-block">sed -i "1s/^>.*/>${SAMPLE}/" ${OUTDIR}/${CHRM}_${SAMPLE}_tmp/${SAMPLE}.fasta</div>
+    <ul>
+        <li><strong>sed -i:</strong> Edit file in-place</li>
+        <li><strong>1s/^>.*/>${SAMPLE}/:</strong> Replace the first line's header with sample name</li>
+        <li><strong>Why:</strong> Original header contains reference chromosome name; we want sample name for downstream analysis</li>
+    </ul>
+    
+    <div class="param-detail">
+        <strong>Before:</strong> >ENA|OZ297169|OZ297169.1<br>
+        <strong>After:</strong> >potamogeton_95
+    </div>
+</div>
+
+<div class="filter-step">
+    <h4>Step 7: Collect Results and Clean Up</h4>
+    <div class="code-block">cp ${SAMPLE}.fasta ${OUTDIR}/${SAMPLE}/${CHRM}.fasta</div>
+    <div class="code-block">rm -rf ${OUTDIR}/${CHRM}_${SAMPLE}_tmp</div>
+    <ul>
+        <li><strong>cp:</strong> Copies final consensus to sample-specific output directory</li>
+        <li><strong>rm -rf:</strong> Removes temporary files to save space</li>
+        <li><strong>Result:</strong> Clean directory structure with per-chromosome consensus files</li>
+    </ul>
+</div>
+
+<h3>Final Output Structure</h3>
+
+<div class="code-block" style="background-color: #f8f9fa; color: #333;">
+${OUTDIR}/
+├── ${SAMPLE}/
+│   ├── ENA|OZ297169|OZ297169.1.fasta
+│   ├── ENA|OZ297170|OZ297170.1.fasta
+│   ├── ENA|OZ297171|OZ297171.1.fasta
+│   └── ...
+└── [temporary directories removed]
+</div>
+
+<div class="important">
+    <h4>📊 Summary of Parameters</h4>
+    <table>
+        <tr>
+            <th>Parameter</th>
+            <th>Value</th>
+            <th>Purpose</th>
+        </tr>
+        <tr>
+            <td>MIN_COVERAGE</td>
+            <td>2</td>
+            <td>Minimum depth required to call a base; positions below this become 'N'</td>
+        </tr>
+        <tr>
+            <td>-I (consensus)</td>
+            <td>Flag</td>
+            <td>Ignore missing genotypes - treat uncalled sites as reference</td>
+        </tr>
+        <tr>
+            <td>--mask</td>
+            <td>BED file</td>
+            <td>Regions to mask with 'N' (low confidence areas)</td>
+        </tr>
+    </table>
+</div>
+
+<div class="tip">
+    <h4>💡 Key Considerations for Consensus Generation</h4>
+    <ul>
+        <li><strong>Coverage threshold:</strong> MIN_COVERAGE=2 is minimal; consider increasing to 3-5 for higher confidence</li>
+        <li><strong>Memory management:</strong> Processing per-chromosome prevents memory issues with large genomes</li>
+        <li><strong>Missing data:</strong> Low coverage regions become 'N's - track these for downstream analyses</li>
+        <li><strong>Heterozygosity:</strong> For diploid/polyploid samples, consensus represents the most likely allele</li>
+    </ul>
+</div>
+
+<div class="warning">
+    <h4>⚠️ Important Notes for Target Capture Data</h4>
+    <ul>
+        <li><strong>Uneven coverage:</strong> Target capture often has variable depth across regions; adjust MIN_COVERAGE accordingly</li>
+        <li><strong>Masking strategy:</strong> Consider creating separate masked and unmasked versions</li>
+        <li><strong>Per-chromosome files:</strong> May need concatenation for some downstream applications:
+            <div class="code-block" style="background-color: #f8f9fa; color: #333;">
+cat ${OUTDIR}/${SAMPLE}/*.fasta > ${OUTDIR}/${SAMPLE}_complete.fasta
+            </div>
+        </li>
+    </ul>
+</div>
+
 
 <h2>🚀 Running the Pipeline (The <code>main</code> Function)</h2>
 <p>The <code>main</code> function orchestrates the workflow. It sets up directories, defines key paths, and executes the analysis functions. Note the use of <code>SLURM_ARRAY_TASK_ID</code> to process samples and genes in parallel.</p>
