@@ -1,0 +1,603 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Workshop: Understanding VCF Files - From Generation to Population Genomics</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+            color: #333;
+        }
+        h1 {
+            color: #2c3e50;
+            border-bottom: 3px solid #3498db;
+            padding-bottom: 10px;
+        }
+        h2 {
+            color: #2980b9;
+            margin-top: 30px;
+            border-left: 4px solid #3498db;
+            padding-left: 10px;
+        }
+        h3 {
+            color: #34495e;
+        }
+        .code-block {
+            background-color: #2c3e50;
+            color: #ecf0f1;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 15px 0;
+            overflow-x: auto;
+            font-family: 'Courier New', monospace;
+            border-left: 4px solid #e74c3c;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        .important {
+            background-color: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 15px;
+            margin: 15px 0;
+            border-radius: 5px;
+        }
+        .tip {
+            background-color: #d1ecf1;
+            border-left: 4px solid #17a2b8;
+            padding: 15px;
+            margin: 15px 0;
+            border-radius: 5px;
+        }
+        .warning {
+            background-color: #f8d7da;
+            border-left: 4px solid #dc3545;
+            padding: 15px;
+            margin: 15px 0;
+            border-radius: 5px;
+        }
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 20px 0;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 12px;
+            text-align: left;
+        }
+        th {
+            background-color: #3498db;
+            color: white;
+        }
+        tr:nth-child(even) {
+            background-color: #f2f2f2;
+        }
+        .exercise {
+            background-color: #e8f4fc;
+            border: 2px dashed #3498db;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 5px;
+        }
+        .image-container {
+            text-align: center;
+            margin: 20px 0;
+        }
+        .image-container img {
+            max-width: 100%;
+            height: auto;
+            border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        .caption {
+            font-style: italic;
+            color: #666;
+            margin-top: 5px;
+            font-size: 0.9em;
+        }
+        .param-detail {
+            background-color: #ffffff;
+            border: 1px solid #bdc3c7;
+            padding: 10px;
+            margin: 5px 0;
+            border-radius: 3px;
+            font-family: monospace;
+        }
+        .param-highlight {
+            background-color: #e8f8f5;
+            border-left: 3px solid #1abc9c;
+            padding: 10px;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔬 Understanding VCF Files: From Generation to Population Genomics</h1>
+    
+    <div class="tip">
+        <strong>🎯 Learning Objectives:</strong> By the end of this workshop, you will understand:
+        <ul>
+            <li>How to generate VCF files for single and multiple samples</li>
+            <li>The structure and interpretation of VCF format</li>
+            <li>Filtering strategies for quality control</li>
+            <li>Basic population genomics analysis using vcflib</li>
+        </ul>
+    </div>
+
+    <h2>1. What is a VCF File?</h2>
+    <p>Variant Call Format (VCF) is a standardized text file format used in bioinformatics for storing genetic variation data. It contains meta-information lines, a header line, and data lines describing genetic variants (SNPs, indels, structural variants) and their annotations.</p>
+
+    <div class="image-container">
+        <svg viewBox="0 0 800 200" width="100%" height="auto">
+            <rect x="0" y="0" width="800" height="200" fill="#f8f9fa" stroke="#3498db" stroke-width="2" rx="10"/>
+            <text x="20" y="30" fill="#2c3e50" font-weight="bold">VCF File Structure:</text>
+            <text x="20" y="60" fill="#e74c3c">##fileformat=VCFv4.2</text>
+            <text x="20" y="80" fill="#e74c3c">##INFO=...</text>
+            <text x="20" y="100" fill="#e74c3c">##FORMAT=...</text>
+            <text x="20" y="120" fill="#27ae60">#CHROM POS ID REF ALT QUAL FILTER INFO FORMAT Sample1 Sample2</text>
+            <text x="20" y="140" fill="#2980b9">chr1 1000 . A G 50 PASS DP=100 Sample1:GT:AD Sample2:GT:AD</text>
+            <text x="20" y="160" fill="#2980b9">chr1 2000 . T C 99 PASS DP=200 Sample1:GT:AD Sample2:GT:AD</text>
+            <text x="20" y="180" fill="#7f8c8d" font-style="italic">Metadata (#) | Header | Data Lines</text>
+        </svg>
+        <div class="caption">Figure 1: Schematic representation of VCF file structure</div>
+    </div>
+
+    <h2>2. Generating VCF Files</h2>
+
+    <h3>2.1 Single Sample SNP Calling</h3>
+    <div class="code-block">
+# Single sample SNP calling using bcftools
+bcftools mpileup -Ou -f reference.fasta sample.sorted.bam --threads 8 \
+                 --annotate INFO/AD,FORMAT/DP,FORMAT/AD \
+| bcftools call -Ou -mv \
+| bcftools +fill-tags -- -t AC,AN,AF,MAF,HWE,ExcHet \
+| bcftools view -Oz > sample.raw.vcf.gz
+
+# Index the VCF
+bcftools index sample.raw.vcf.gz
+    </div>
+
+    <h3>2.2 Multi-Sample SNP Calling with BAM List</h3>
+    <div class="important">
+        <strong>📋 BAM List Format:</strong> Create a text file listing all BAM files (one per line) for joint calling. This enables simultaneous variant calling across multiple samples, which is essential for population genetics.
+    </div>
+
+    <div class="code-block">
+# Example bamlist.txt content:
+# /path/to/sample1.sorted.bam
+# /path/to/sample2.sorted.bam
+# /path/to/sample3.sorted.bam
+    </div>
+
+    <h3>2.3 Complete Multi-Sample SNP Calling Pipeline</h3>
+    <div class="code-block">
+function snp_calling {
+    BAMLIST=$1
+    OUTDIR=$2
+    REF=$3
+    PREFIX=$4
+    
+    # FILTERING PARAMETERS
+    min_base_mapping_quality=10      # Minimum base mapping quality
+    minQ=20                          # Minimum variant quality score
+    MIN_DP=7                         # Minimum total depth
+    MIN_ALT_COUNT=1                  # Minimum alternate allele count
+    MIN_FMT_DP=5                     # Minimum per-sample depth
+    MIN_MINOR_ALLELE_FREQ=0.01       # Minimum minor allele frequency
+    MIN_MAPPING_QUALITY=30           # Minimum mapping quality
+    SIG=0.05                         # Significance threshold for HWE
+    
+    echo 'Calling SNPs for' $PREFIX
+    
+    # Prepare sample lists
+    tmpbam=tmp_bamlist.txt
+    sample_rename=sample_rename.txt
+    
+    # Extract BAM paths and sample names
+    tail -n +2 $BAMLIST | cut -d ',' -f 1 > $tmpbam
+    tail -n +2 $BAMLIST | cut -d ',' -f 1 | rev | cut -d '/' -f 1 | rev | cut -d '.' -f 1 | rev | cut -d '-' -f 1 | rev > $sample_rename
+    
+    # Step 1: Initial variant calling
+    bcftools mpileup -Ou -f $REF --bam-list $tmpbam --threads 80 \
+                     --annotate INFO/AD,FORMAT/DP,FORMAT/AD \
+    | bcftools call -Ou -mv \
+    | bcftools +fill-tags -- -t AC,AN,AF,MAF,HWE,ExcHet \
+    | bcftools view -Oz > ${OUTDIR}/${PREFIX}.tmp.vcf.gz
+    
+    # Step 2: Rename samples
+    bcftools reheader -s $sample_rename ${OUTDIR}/${PREFIX}.tmp.vcf.gz \
+    | bcftools view -Oz -o ${OUTDIR}/${PREFIX}.raw.vcf.gz
+    
+    # Step 3: Apply filters
+    bcftools view ${OUTDIR}/${PREFIX}.raw.vcf.gz -O u 2>/dev/null \
+    | bcftools view --types snps \
+    | bcftools view -m2 -M2 \
+    | bcftools filter -e "QUAL<${minQ} || INFO/DP < $MIN_DP" \
+    | bcftools filter -i "INFO/AC[1] >= $MIN_ALT_COUNT" \
+    | bcftools filter -i "COUNT(FMT/DP<${MIN_FMT_DP}) <= 2" \
+    | bcftools filter -e "INFO/MAF[0] < $MIN_MINOR_ALLELE_FREQ" \
+    | bcftools filter -e "INFO/MQ < $MIN_MAPPING_QUALITY" \
+    | bcftools filter -e "HWE < $SIG" \
+    | bcftools filter -e "INFO/ExcHet < $SIG" \
+    | bcftools view -Oz -o $OUTDIR/${PREFIX}.flt3.vcf.gz
+    
+    # Index files
+    bcftools index $OUTDIR/${PREFIX}.flt3.vcf.gz -f
+    bcftools index $OUTDIR/${PREFIX}.raw.vcf.gz -f
+    
+    # Clean up
+    rm ${OUTDIR}/${PREFIX}.tmp.vcf.gz
+}
+    </div>
+
+    <h2>3. Understanding VCF Format</h2>
+    
+    <h3>3.1 Header Section (Lines starting with ##)</h3>
+    <div class="image-container">
+<img src="vcf_headings.jpg" alt="mapping shows SNPs visually">
+<div class="caption">the VCF header section contains filtering information etc</div> </div>
+<div class="important">
+    <strong>🔍 Key Header Lines:</strong>
+    <ul>
+        <li><code>##fileformat=VCFv4.2</code>: Specifies the VCF version</li>
+        <li><code>##INFO=...</code>: Defines INFO fields (e.g., AC, AF, MAF)</li>
+        <li><code>##FORMAT=...</code>: Defines FORMAT fields for genotype data</li>
+    This is the best place to know what parameters are available for filtering and analysis. 
+    You can also find the meaning of each annotation in the header, which is crucial for interpreting your data correctly.
+    Always check the header to understand the annotations present in your VCF file.
+    </ul>
+</div>
+    <h3>3.2 Data Line Components</h3>
+    <table>
+        <tr>
+            <th>Column</th>
+            <th>Field</th>
+            <th>Description</th>
+            <th>Example</th>
+        </tr>
+        <tr>
+            <td>1</td>
+            <td>CHROM</td>
+            <td>Chromosome or contig name</td>
+            <td>chr1</td>
+        </tr>
+        <tr>
+            <td>2</td>
+            <td>POS</td>
+            <td>1-based position</td>
+            <td>123456</td>
+        </tr>
+        <tr>
+            <td>3</td>
+            <td>ID</td>
+            <td>Variant identifier (dbSNP rsID, etc.)</td>
+            <td>rs123456</td>
+        </tr>
+        <tr>
+            <td>4</td>
+            <td>REF</td>
+            <td>Reference allele</td>
+            <td>A</td>
+        </tr>
+        <tr>
+            <td>5</td>
+            <td>ALT</td>
+            <td>Alternate allele(s)</td>
+            <td>G</td>
+        </tr>
+        <tr>
+            <td>6</td>
+            <td>QUAL</td>
+            <td>Phred-scaled quality score</td>
+            <td>99.5</td>
+        </tr>
+        <tr>
+            <td>7</td>
+            <td>FILTER</td>
+            <td>Filter status (PASS or failed filters)</td>
+            <td>PASS</td>
+        </tr>
+        <tr>
+            <td>8</td>
+            <td>INFO</td>
+            <td>Variant-level annotations</td>
+            <td>AC=5;AF=0.125;MAF=0.125</td>
+        </tr>
+        <tr>
+            <td>9</td>
+            <td>FORMAT</td>
+            <td>Format of genotype fields</td>
+            <td>GT:DP:AD</td>
+        </tr>
+        <tr>
+            <td>10+</td>
+            <td>SAMPLES</td>
+            <td>Per-sample genotype data</td>
+            <td>0/1:15:7,8</td>
+        </tr>
+    </table>
+
+    <h2>4. Key VCF Annotations and Their Population Genetics Significance</h2>
+
+    <div class="param-highlight">
+        <h3>4.1 Allele-Based Statistics</h3>
+        <div class="param-detail">
+            <strong>AC (Allele Count):</strong> Count of alternate alleles in called genotypes<br>
+            <em>Population relevance:</em> Used to calculate allele frequencies and for Fst estimation
+        </div>
+        <div class="param-detail">
+            <strong>AN (Allele Number):</strong> Total number of alleles in called genotypes<br>
+            <em>Population relevance:</em> Essential for frequency calculations (AF = AC/AN)
+        </div>
+        <div class="param-detail">
+            <strong>AF (Allele Frequency):</strong> Frequency of each alternate allele<br>
+            <em>Population relevance:</em> Core parameter for population genetics analyses
+        </div>
+        <div class="param-detail">
+            <strong>MAF (Minor Allele Frequency):</strong> Frequency of the less common allele<br>
+            <em>Population relevance:</em> Used to identify rare variants and for demographic inference
+        </div>
+    </div>
+
+    <div class="param-highlight">
+        <h3>4.2 Hardy-Weinberg Equilibrium Statistics</h3>
+        <div class="param-detail">
+            <strong>HWE (Hardy-Weinberg Equilibrium p-value):</strong> Probability that observed genotypes follow HWE<br>
+            <em>Population relevance:</em> 
+            <ul>
+                <li>p > 0.05: Population in HWE (random mating, no selection)</li>
+                <li>p < 0.05: Deviation from HWE - possible selection, inbreeding, or genotyping errors</li>
+                <li>Used to detect problematic markers or interesting evolutionary processes</li>
+            </ul>
+        </div>
+        <div class="param-detail">
+            <strong>ExcHet (Excess Heterozygosity):</strong> Measure "Probability of excess heterozygosity"<br>
+            <ul>
+                <li>INFO/ExcHet Number:A Type:Float</li>
+                <li>Test excess heterozygosity; 1=good, 0=bad</li>
+                <li>basically, lower P values indicate potential excess heterozygosity</li>
+            </ul>
+        </div>
+    </div>
+
+    <h2>5. Filtering Strategies for Population Genomics</h2>
+
+    <table>
+        <tr>
+            <th>Filter</th>
+            <th>Parameter</th>
+            <th>Population Relevance</th>
+        </tr>
+        <tr>
+            <td>QUAL < minQ</td>
+            <td>minQ=20</td>
+            <td>Remove low-confidence variants that could bias frequency estimates</td>
+        </tr>
+        <tr>
+            <td>INFO/DP < MIN_DP</td>
+            <td>MIN_DP=7</td>
+            <td>Insufficient coverage can lead to inaccurate genotype calls and frequency estimates</td>
+        </tr>
+        <tr>
+            <td>INFO/AC[1] >= MIN_ALT_COUNT</td>
+            <td>MIN_ALT_COUNT=1</td>
+            <td>Ensure variants are observed in at least one sample (remove monomorphic sites)</td>
+        </tr>
+        <tr>
+            <td>COUNT(FMT/DP<MIN_FMT_DP) <= 2</td>
+            <td>MIN_FMT_DP=5</td>
+            <td>Allow up to 2 samples with low depth - balances data retention and quality</td>
+        </tr>
+        <tr>
+            <td>INFO/MAF[0] < MIN_MINOR_ALLELE_FREQ</td>
+            <td>MIN_MAF=0.01</td>
+            <td>Remove rare variants that may be sequencing errors or private mutations</td>
+        </tr>
+        <tr>
+            <td>INFO/MQ < MIN_MAPPING_QUALITY</td>
+            <td>MIN_MQ=30</td>
+            <td>Remove variants from repetitive regions that could cause mapping artifacts</td>
+        </tr>
+        <tr>
+            <td>HWE < SIG</td>
+            <td>SIG=0.05</td>
+            <td>Remove markers deviating from HWE (potential genotyping errors or selection)</td>
+        </tr>
+        <tr>
+            <td>INFO/ExcHet < SIG</td>
+            <td>SIG=0.05</td>
+            <td>Remove markers with significant excess heterozygosity (possible paralogs)</td>
+        </tr>
+    </table>
+
+    <h2>6. Population Genomics Analysis with vcflib</h2>
+    
+    <div class="important">
+        <strong>🔧 vcflib:</strong> A powerful C++ library for manipulating VCF files, providing numerous tools for population genetics analyses. <a href="https://github.com/vcflib/vcflib" target="_blank">GitHub Repository</a>
+    </div>
+
+    <h3>6.1 Installing vcflib</h3>
+    <div class="code-block">
+# Clone and install vcflib
+git clone --recursive https://github.com/vcflib/vcflib.git
+cd vcflib
+make
+# Add to PATH
+export PATH=$PATH:/path/to/vcflib/bin
+    </div>
+
+    <h3>6.2 Basic vcflib Commands</h3>
+    
+    <div class="filter-step">
+        <h4>vcfstats - Comprehensive Variant Statistics</h4>
+        <div class="code-block">
+# Generate comprehensive statistics from VCF
+vcfstats filtered.vcf.gz > stats.txt
+
+# Output includes:
+# - Number of SNPs, indels
+# - Transition/Transversion ratio
+# - Allele frequency distribution
+# - Genotype quality distribution
+        </div>
+    </div>
+
+    <div class="filter-step">
+        <h4>vcfallelicprimitives - Decompose Complex Variants</h4>
+        <div class="code-block">
+# Break down complex variants into primitive alleles
+# Essential for accurate population genetics
+vcfallelicprimitives filtered.vcf.gz | bgzip > decomposed.vcf.gz
+        </div>
+    </div>
+
+    <div class="filter-step">
+        <h4>vcfintersect - Compare VCF Files</h4>
+        <div class="code-block">
+# Find common variants between populations
+vcfintersect -a population1.vcf.gz -b population2.vcf.gz > shared.vcf.gz
+        </div>
+    </div>
+
+    <h3>6.3 Population Differentiation Analysis (Fst)</h3>
+    
+    <div class="important">
+        <strong>📊 Fst (Fixation Index):</strong> Measures genetic differentiation between populations. Ranges from 0 (no differentiation) to 1 (complete differentiation).
+    </div>
+
+    <div class="code-block">
+# Calculate Fst between two populations using vcflib
+# First, create population files
+echo "sample1
+sample2
+sample3" > pop1.txt
+echo "sample4
+sample5
+sample6" > pop2.txt
+
+# Use vcffixup to add allele frequencies
+vcffixup filtered.vcf.gz | vcffilter -f "AC > 0" | \
+vcftools --vcf - --weir-fst-pop pop1.txt --weir-fst-pop pop2.txt --out population_comparison
+
+# Alternative: Use vcflib's vcfstats for per-site Fst
+# Note: You may need to use additional tools like vcftools for Fst calculation
+    </div>
+
+    <h3>6.4 Additional Population Genomics Tools</h3>
+    
+    <table>
+        <tr>
+            <th>Tool</th>
+            <th>Function</th>
+            <th>Example Command</th>
+        </tr>
+        <tr>
+            <td>vcftools</td>
+            <td>Comprehensive VCF manipulation and analysis</td>
+            <td>vcftools --gzvcf input.vcf.gz --freq --out output</td>
+        </tr>
+        <tr>
+            <td>bcftools</td>
+            <td>Variant calling and manipulation</td>
+            <td>bcftools stats input.vcf.gz > stats.txt</td>
+        </tr>
+        <tr>
+            <td>PLINK</td>
+            <td>Population genetics analysis</td>
+            <td>plink --vcf input.vcf.gz --freq --out output</td>
+        </tr>
+        <tr>
+            <td>vcfclassify</td>
+            <td>Classify variants by type and effect</td>
+            <td>vcfclassify input.vcf.gz > classified.vcf</td>
+        </tr>
+    </table>
+
+    <h2>7. Practical Exercise: Population Genomics Workflow</h2>
+    
+    <div class="exercise">
+        <h3>Exercise: Analyzing Genetic Differentiation Between Populations</h3>
+        
+        <p><strong>Objective:</strong> Use vcflib and related tools to identify highly differentiated SNPs between two populations.</p>
+        
+        <div class="code-block">
+# Step 1: Filter your VCF
+bcftools view -m2 -M2 -v snps raw.vcf.gz -Oz > biallelic_snps.vcf.gz
+
+# Step 2: Apply quality filters
+bcftools filter -e "QUAL<20 || INFO/DP<10" biallelic_snps.vcf.gz \
+    | bcftools filter -e "MAF<0.05" \
+    | bcftools view -Oz > filtered_snps.vcf.gz
+
+# Step 3: Calculate allele frequencies per population
+# (Requires population assignment file)
+
+# Step 4: Identify outlier SNPs (potential targets of selection)
+# Using vcflib to calculate differentiation statistics
+
+# Step 5: Visualize results
+# Plot Fst distribution and identify outliers
+        </div>
+        
+        <div class="tip">
+            <strong>💡 Discussion Questions:</strong>
+            <ul>
+                <li>What would a negative Fst value indicate?</li>
+                <li>How does the MAF filter affect your ability to detect selection?</li>
+                <li>Why is HWE filtering important before Fst calculation?</li>
+            </ul>
+        </div>
+    </div>
+
+    <h2>8. Best Practices and Common Pitfalls</h2>
+
+    <div class="tip">
+        <h3>✅ Best Practices</h3>
+        <ul>
+            <li><strong>Always inspect raw VCFs:</strong> Before filtering, understand your data distribution</li>
+            <li><strong>Document filtering parameters:</strong> Keep track of thresholds for reproducibility</li>
+            <li><strong>Use appropriate MAF thresholds:</strong> 0.01-0.05 for population studies, higher for selection scans</li>
+            <li><strong>Consider linkage disequilibrium:</strong> Prune variants for many population genetics analyses</li>
+            <li><strong>Validate with multiple methods:</strong> Cross-check results using different tools</li>
+        </ul>
+    </div>
+
+    <div class="warning">
+        <h3>⚠️ Common Pitfalls</h3>
+        <ul>
+            <li><strong>Over-filtering:</strong> Removing too many variants can bias population genetics inferences</li>
+            <li><strong>Ignoring missing data:</strong> High missingness can affect frequency estimates</li>
+            <li><strong>Population structure:</strong> Undetected structure can violate HWE assumptions</li>
+            <li><strong>Reference bias:</strong> Mapping to a reference can introduce biases in variant calling</li>
+            <li><strong>Sample size effects:</strong> Small sample sizes lead to unstable frequency estimates</li>
+        </ul>
+    </div>
+
+    <h2>9. Additional Resources</h2>
+    
+    <ul>
+        <li><a href="https://samtools.github.io/bcftools/bcftools.html">bcftools Documentation</a></li>
+        <li><a href="https://vcflib.github.io/">vcflib Documentation</a></li>
+        <li><a href="https://vcftools.github.io/">vcftools Manual</a></li>
+        <li><a href="https://www.cog-genomics.org/plink/">PLINK Documentation</a></li>
+        <li><a href="https://samtools.github.io/hts-specs/VCFv4.3.pdf">VCF Specification v4.3</a></li>
+    </ul>
+
+    <div class="important">
+        <h3>🎓 Key Takeaways</h3>
+        <ul>
+            <li>VCF files are the standard format for storing genetic variation data</li>
+            <li>Proper filtering is essential for reliable population genetics analyses</li>
+            <li>Understanding VCF annotations (HWE, ExcHet, MAF) is crucial for interpretation</li>
+            <li>vcflib provides powerful tools for population genomics analysis</li>
+            <li>Always consider biological meaning when setting filtering thresholds</li>
+        </ul>
+    </div>
+
+</body>
