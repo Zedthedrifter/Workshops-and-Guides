@@ -163,11 +163,10 @@ REF=$3
 SAMPLE=$4
 
 #FILTERING
-minQ=20
-minDP=10
-MIN_FMT_DP=5
-MIN_MINOR_ALLELE_FREQ=0.01
-MIN_MAPPING_QUALITY=30
+minQ=20 #Remove variants with quality score below 20
+minDP=10 #Remove variants with total depth below 10 reads
+MIN_MINOR_ALLELE_FREQ=0.01 #Remove variants whose first alternate allele frequency is below 1%
+MIN_MAPPING_QUALITY=30 #Remove variants with mean mapping quality below 30
 
 
 echo 'calling SNPs'
@@ -176,12 +175,16 @@ echo 'calling SNPs'
 bcftools mpileup -Ou -f $REF $INDIR/${SAMPLE}.sorted.bam --threads 8 \
                  --annotate INFO/AD,FORMAT/DP,FORMAT/AD \
  |   bcftools call -Ou -mv \
- |   bcftools view -i '1==1' 2>/dev/null \
+ |   bcftools +fill-tags -- -t AC,AN,AF,MAF,HWE,ExcHet \
+ |   bcftools view -Oz   > ${OUTDIR}/${SAMPLE}.raw.vcf.gz 
+
+#OPTIONAL FILTERS
+bcftools view ${OUTDIR}/${SAMPLE}.raw.vcf.gz -O u 2>/dev/null \
+ |   bcftools view --types snps \
+ |   bcftools view -m2 -M2 \
  |   bcftools filter -e "QUAL<${minQ} || INFO/DP<${minDP}" \
- |   bcftools +fill-tags -- -t AC,AN,AF,MAF,HWE  \
  |   bcftools filter   -e "INFO/MAF[0] < ${MIN_MINOR_ALLELE_FREQ}"  \
- |   bcftools filter   -e "INFO/MQ < ${MIN_MAPPING_QUALITY}"  \
- |   bcftools filter   -e 'INFO/VDB < 0.1'  -Oz -o $OUTDIR/${SAMPLE}.flt3.vcf.gz
+ |   bcftools filter   -e "INFO/MQ < ${MIN_MAPPING_QUALITY}"  -Oz -o $OUTDIR/${SAMPLE}.flt3.vcf.gz
 
 echo "Indexing filtered VCF..."
     bcftools index $OUTDIR/${SAMPLE}.flt3.vcf.gz -f
