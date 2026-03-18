@@ -1,0 +1,1172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Workshop: Target Capture Data Processing Pipeline</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+            color: #333;
+        }
+        h1 {
+            color: #2c3e50;
+            border-bottom: 3px solid #3498db;
+            padding-bottom: 10px;
+        }
+        h2 {
+            color: #2980b9;
+            margin-top: 30px;
+            border-left: 4px solid #3498db;
+            padding-left: 10px;
+        }
+        h3 {
+            color: #34495e;
+        }
+        .code-block {
+            background-color: #2c3e50;
+            color: #ecf0f1;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 15px 0;
+            overflow-x: auto;
+            font-family: 'Courier New', monospace;
+            border-left: 4px solid #e74c3c;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        .important {
+            background-color: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 15px;
+            margin: 15px 0;
+            border-radius: 5px;
+        }
+        .tip {
+            background-color: #d1ecf1;
+            border-left: 4px solid #17a2b8;
+            padding: 15px;
+            margin: 15px 0;
+            border-radius: 5px;
+        }
+        .warning {
+            background-color: #f8d7da;
+            border-left: 4px solid #dc3545;
+            padding: 15px;
+            margin: 15px 0;
+            border-radius: 5px;
+        }
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 20px 0;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 12px;
+            text-align: left;
+        }
+        th {
+            background-color: #3498db;
+            color: white;
+        }
+        tr:nth-child(even) {
+            background-color: #f2f2f2;
+        }
+        .exercise {
+            background-color: #e8f4fc;
+            border: 2px dashed #3498db;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 5px;
+        }
+        .image-container {
+            text-align: center;
+            margin: 20px 0;
+        }
+        .image-container img {
+            max-width: 100%;
+            height: auto;
+            border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        .caption {
+            font-style: italic;
+            color: #666;
+            margin-top: 5px;
+            font-size: 0.9em;
+        }
+        .param-detail {
+            background-color: #ffffff;
+            border: 1px solid #bdc3c7;
+            padding: 10px;
+            margin: 5px 0;
+            border-radius: 3px;
+            font-family: monospace;
+        }
+        .param-highlight {
+            background-color: #e8f8f5;
+            border-left: 3px solid #1abc9c;
+            padding: 10px;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+
+<h1>🔬 Target Capture Data Processing: A Modular Bash Pipeline</h1>
+<p><strong>Objective:</strong> This workshop provides a structured, production-ready pipeline for processing target capture sequencing data. From raw FASTQ files to consensus sequences and phylogenies, each step is compartmentalized into functions for clarity, reproducibility, and scalability on HPC clusters.</p>
+
+<div class="important">
+    <strong>⚙️ System Requirements:</strong> This pipeline is designed for a SLURM-based HPC environment. It assumes access to <code>conda</code>, <code>wget</code>, and the bioinformatics tools installed in the <code>target_capture</code> environment.
+</div>
+<div class="important">  <pre>
+Before Iain is mad at us, let's request a specific amount of resources for our job:
+srun --partition=short --cpus-per-task=8 --mem=8G --pty bash
+This ensures we have enough CPU and memory to run the pipeline efficiently without overloading the cluster.
+</pre>
+</div>
+
+<h2>📁 Pipeline Architecture & Compartmentalization</h2>
+<p>The pipeline is built as a series of independent Bash functions. This modular design allows you to run specific steps without re-running the entire workflow. Each function has a clear input/output interface, making the code easy to debug and maintain.</p>
+<p>The entire workflow... if things are going good</p>
+<div class="image-container">
+<img src="workflow.jpg" alt="mapping shows SNPs visually">
+<div class="caption">how the pipeline works</div>
+</div>
+
+
+<h2>🧪 Core Functions: Parameter Deep Dive</h2>
+<p>We will focus on the <code>fastp_qc</code> function, which performs read trimming and quality control. The parameters are chosen to reflect modern industry standards for Illumina data, specifically optimized for target capture libraries.</p>
+
+<h3>1. Environment & Data Preparation</h3>
+<div class="code-block">
+#!/bin/bash
+#SBATCH --job-name=target_array
+#SBATCH --array=1
+#SBATCH --cpus-per-task=4
+#SBATCH --mem=4G
+#SBATCH --output=slurm-%A_%a.out
+
+function setup_conda {
+    conda create --name target_capture
+    conda install --name target_capture -y fastp bwa samtools bcftools iqtree seqkit blast
+}
+
+function download_ena {
+
+OUTDIR=$1
+
+wget -nc -P $OUTDIR ftp://ftp.sra.ebi.ac.uk/vol1/fastq/ERR776/ERR776786/ERR776786_1.fastq.gz
+wget -nc -P $OUTDIR ftp://ftp.sra.ebi.ac.uk/vol1/fastq/ERR776/ERR776786/ERR776786_2.fastq.gz 
+wget -nc -P $OUTDIR ftp://ftp.sra.ebi.ac.uk/vol1/fastq/ERR776/ERR776790/ERR776790_1.fastq.gz
+wget -nc -P $OUTDIR ftp://ftp.sra.ebi.ac.uk/vol1/fastq/ERR776/ERR776790/ERR776790_2.fastq.gz
+}
+</div>
+<div class="tip">
+    <strong>💡 Key Point:</strong> The <code>--array=1</code> directive sets up a SLURM job array. This allows you to process multiple samples in parallel. The <code>-nc</code> flag in <code>wget</code> prevents re-downloading existing files.
+</div>
+
+<h3>2. Read Trimming & QC: <code>fastp_qc</code></h3>
+
+<p>This function replaces legacy tools like Trimmomatic. The parameters below are selected for a balance between stringency and data retention, crucial for target capture where reads are short.</p>
+
+<div class="code-block">
+function fastp_qc {
+    INDIR=$1
+    OUTDIR=$2
+    SAMPLE=$3
+
+    fastp -i ${INDIR}/${SAMPLE}_1.fastq.gz -I ${INDIR}/${SAMPLE}_2.fastq.gz \
+          -o ${OUTDIR}/${SAMPLE}_R1.fq.gz   -O ${OUTDIR}/${SAMPLE}_R2.fq.gz \
+          --unpaired1 ${OUTDIR}/${SAMPLE}_unpaired1.fq.gz \
+          --unpaired2 ${OUTDIR}/${SAMPLE}_unpaired2.fq.gz \
+          -h ${OUTDIR}/${SAMPLE}.html \
+          --json ${OUTDIR}/${SAMPLE}.json \
+          --detect_adapter_for_pe \
+          --qualified_quality_phred 20 \
+          --unqualified_percent_limit 40 \
+          -c \
+          --cut_front \
+          --cut_front_mean_quality 20 \
+          --cut_tail \
+          --cut_tail_mean_quality 20 \
+          --cut_right \
+          --cut_right_window_size 4 \
+          --cut_right_mean_quality 20 \
+          --length_required 36 \
+          --trim_poly_g \
+          --thread 8 \
+          > ${OUTDIR}/${SAMPLE}.fastp.log
+}
+</div>
+
+<h4>📊 Parameter Justification Table</h4>
+<table>
+    <thead>
+        <tr>
+            <th>fastp Parameter</th>
+            <th>Value</th>
+            <th>Trimmomatic Equivalent</th>
+            <th>Rationale for Target Capture</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td><code>--detect_adapter_for_pe</code></td>
+            <td>N/A</td>
+            <td><code>ILLUMINACLIP</code></td>
+            <td>Automatically detects and trims common Illumina adapter sequences. Simpler than providing an explicit FASTA file.</td>
+        </tr>
+        <tr>
+            <td><code>--qualified_quality_phred</code></td>
+            <td>20</td>
+            <td>Part of <code>SLIDINGWINDOW</code></td>
+            <td>Sets a base quality threshold of Q20 (99% accuracy). Bases below this are considered low quality.</td>
+        </tr>
+        <tr>
+            <td><code>--unqualified_percent_limit</code></td>
+            <td>40</td>
+            <td>Part of <code>SLIDINGWINDOW</code></td>
+            <td>Allows up to 40% of bases in a read to be low-quality before discarding. This is permissive, preserving short target fragments.</td>
+        </tr>
+        <tr>
+            <td><code>-c (--correction)</code></td>
+            <td>N/A</td>
+            <td>None</td>
+            <td>Performs base correction in overlapping regions of paired-end reads, reducing sequencing errors.</td>
+        </tr>
+        <tr>
+            <td><code>--cut_front/--cut_tail</code></td>
+            <td>Mean Q 20</td>
+            <td><code>LEADING:3 / TRAILING:3</code></td>
+            <td><span class="param-highlight">Modern Upgrade:</span> Trims low-quality bases (Q<20) from the 5' and 3' ends. The old Q3 threshold is obsolete for modern data.</td>
+        </tr>
+        <tr>
+            <td><code>--cut_right</code></td>
+            <td>Window:4, Mean Q:20</td>
+            <td><code>SLIDINGWINDOW:4:15</code></td>
+            <td><span class="param-highlight">Modern Upgrade:</span> Uses a 4bp sliding window from the 5' end. If the mean quality drops below Q20, the read is truncated. The quality threshold is raised from 15 to 20 for higher confidence.</td>
+        </tr>
+        <tr>
+            <td><code>--length_required</code></td>
+            <td>36</td>
+            <td><code>MINLEN:36</code></td>
+            <td>Discards any read shorter than 36bp after trimming. This is a safe minimum for reliable mapping.</td>
+        </tr>
+        <tr>
+            <td><code>--trim_poly_g</code></td>
+            <td>N/A</td>
+            <td>None</td>
+            <td>Essential for NovaSeq data. Removes poly-G tails caused by two-color chemistry, which appear as high-quality Gs but are artifacts.</td>
+        </tr>
+    </tbody>
+</table>
+
+<div class="important">
+    <strong>🔬 Why Q20 instead of Q3 or Q15?</strong>
+    <ul>
+        <li><strong>Q3</strong> (from old Trimmomatic tutorials) is essentially no trimming. Modern Illumina reads rarely have bases below Q3.</li>
+        <li><strong>Q15</strong> (99.97% accuracy) is a common legacy threshold.</li>
+        <li><strong>Q20</strong> (99% accuracy) is the current best practice. It removes genuinely poor-quality bases while retaining the high-quality data typical of modern sequencers. This is especially important for variant calling downstream.</li>
+    </ul>
+</div>
+
+<div class="important">
+    <strong>🔬 Another good thing about using a script </strong>
+    <p><pre>
+    you can easily turn your script to paper-styled method section with the help of AI. 
+    All you need to do is to copy and paste the script into an AI assistant like ChatGPT or Claude. </pre>
+    Raw sequencing reads were subjected to comprehensive quality control using fastp (v0.23.4) with the following parameters. 
+    Adapter sequences were automatically detected and removed for paired-end reads (--detect_adapter_for_pe). 
+    Reads were filtered based on a minimum Phred score of 20 (--qualified_quality_phred 20), 
+    with a maximum allowance of 40% unqualified bases per read (--unqualified_percent_limit 40).  
+    A multi-pass trimming strategy was employed to ensure high base quality across read lengths. 
+    Bases at the front and tail ends were trimmed if the mean quality fell below 20 (--cut_front, --cut_tail, --cut_front_mean_quality 20). 
+    A sliding window scan from the 5' to 3' end trimmed regions where the mean quality in a 4-base window dropped below 20 
+    (--cut_right, --cut_right_window_size 4, --cut_right_mean_quality 20). 
+    Poly-G tails were removed (--trim_poly_g). 
+    Reads shorter than 36 bases after trimming were discarded (--length_required 36). 
+    Base correction in overlapped regions of paired-end reads was enabled (-c) to improve consensus accuracy.
+   </p>
+</div>
+
+<h3>3. Mapping: <code>bwa_map</code> vs <code>bowtie2_map</code></h3>
+<div class="tip"> 
+    We had an update for the cleaning up step. for the capture steps, there are more ready-to-use pipelines and tools, such as Captus, EASY353, and HybPiper. 
+    But it is still good to know the underlying logics, which also gives you more flexibility to customize your pipeline.
+    Besides, bam files and vcf files are common formats for storing mapping and variant calling results, which are also widely used in other types of sequencing data. 
+    So it is good to know how to generate them from raw data, i.e. via mapping and variant calling.
+</div>
+<p>Both functions are provided, but BWA-MEM is recommended for its sensitivity with indels and its status as the standard for variant calling.</p>
+<div class="code-block">
+function bwa_map {
+    INDIR=$1; REF=$2; OUTDIR=$3; SAMPLE=$4
+    minQ=10
+    bwa mem $REF ${INDIR}/${SAMPLE}_R1.fq.gz ${INDIR}/${SAMPLE}_R2.fq.gz -t 8 -k 20 |\
+        samtools view -Sbh -F 4 -@ 8 -o $OUTDIR/${SAMPLE}.all.bam
+    samtools view $OUTDIR/${SAMPLE}.all.bam -Sbh -F 4 -f 3 -q $minQ -@ 8 |\
+        samtools sort -@ 8 -o $OUTDIR/${SAMPLE}.sorted.bam
+    samtools index $OUTDIR/${SAMPLE}.sorted.bam
+}
+</div>
+<div class="tip">
+    <strong>🧬 Parameter Notes:</strong>
+    <ul>
+        <li><code>-k 20</code>: Minimum seed length. A lower value (default is 19) increases sensitivity for short target capture reads.</li>
+        <li><code>-q $minQ</code> (set to 10): Filters out low-quality alignments after mapping. Q10 is a lenient threshold to keep more data; you can increase this (e.g., Q20) for more stringent analysis.</li>
+        <li><code>-f 3</code>: Keeps only reads that are properly paired (0x3 flag).</li>
+    </ul>
+</div>
+
+<h2>Target Capture Data Processing Pipeline</h2>
+    
+    <h3>SNP Calling and Filtering Pipeline</h3>
+    
+    <p>This section details the variant calling and filtering process using <code>bcftools</code>. The pipeline is implemented as a bash function that processes a single sample at a time, applying multiple quality filters to ensure high-confidence SNP calls.</p>
+
+    <div class="tip">
+        <strong>🔍 Key Concept:</strong> The pipeline uses a series of piped commands, each applying a specific filter or transformation. This modular approach allows for easy modification and understanding of each filtering step.
+    </div>
+
+    <h3>The SNP Calling Function</h3>
+    
+    <div class="code-block">
+function snp_calling {
+    INDIR=$1
+    OUTDIR=$2
+    REF=$3
+    SAMPLE=$4
+
+    #FILTERING
+    minQ=20 
+    minDP=10 
+    MIN_MINOR_ALLELE_FREQ=0.01 
+    MIN_MAPPING_QUALITY=30 
+
+    echo 'calling SNPs'
+   
+    bcftools mpileup -Ou -f $REF $INDIR/${SAMPLE}.sorted.bam --threads 8 \
+                     --annotate INFO/AD,FORMAT/DP,FORMAT/AD \
+    |   bcftools call -Ou -mv \
+    |   bcftools +fill-tags -- -t AC,AN,AF,MAF,HWE,ExcHet \
+    |   bcftools view -Oz   > ${OUTDIR}/${SAMPLE}.raw.vcf.gz 
+
+    #OPTIONAL FILTERS
+    bcftools view ${OUTDIR}/${SAMPLE}.raw.vcf.gz -O u 2>/dev/null \
+    |   bcftools view --types snps \
+    |   bcftools view -m2 -M2 \
+    |   bcftools filter -e "QUAL&lt;${minQ} || INFO/DP&lt;${minDP}" \
+    |   bcftools filter   -e "INFO/MAF[0] &lt; ${MIN_MINOR_ALLELE_FREQ}"  \
+    |   bcftools filter   -e "INFO/MQ &lt; ${MIN_MAPPING_QUALITY}"  -Oz -o $OUTDIR/${SAMPLE}.flt3.vcf.gz
+
+    echo "Indexing filtered VCF..."
+    bcftools index $OUTDIR/${SAMPLE}.flt3.vcf.gz -f
+}
+    </div>
+
+    <h3>Pipeline Steps Explained</h3>
+    
+    <div class="filter-step">
+        <h4>Step 1: mpileup - Generating Raw Variant Calls</h4>
+        <p>moving from mapping to variant calling</p>
+    <div class="image-container">
+    <img src="mapping.jpg" alt="mapping shows SNPs visually">
+    <div class="caption">from mapping to SNPs: a visual validation</div>
+</div>
+        <div class="code-block">bcftools mpileup -Ou -f $REF $INDIR/${SAMPLE}.sorted.bam --threads 8 --annotate INFO/AD,FORMAT/DP,FORMAT/AD</div>
+        <ul>
+            <li><strong>-Ou:</strong> Output in uncompressed BCF format (faster piping)</li>
+            <li><strong>-f $REF:</strong> Reference genome in FASTA format</li>
+            <li><strong>--threads 8:</strong> Use 8 CPU threads for parallel processing</li>
+            <li><strong>--annotate:</strong> Add additional information fields:
+                <ul>
+                    <li><code>INFO/AD</code>: Allelic depth at variant sites</li>
+                    <li><code>FORMAT/DP</code>: Per-sample read depth</li>
+                    <li><code>FORMAT/AD</code>: Per-sample allelic depth</li>
+                </ul>
+            </li>
+        </ul>
+    </div>
+
+    <div class="filter-step">
+        <h4>Step 2: call - Initial Variant Calling</h4>
+        <div class="code-block">bcftools call -Ou -mv</div>
+        <ul>
+            <li><strong>-mv:</strong> Multiallelic variant calling mode</li>
+            <li><strong>-Ou:</strong> Continue with uncompressed output for piping</li>
+            <li><strong>What it does:</strong> Identifies variant sites from the mpileup output using a Bayesian model</li>
+        </ul>
+    </div>
+
+    <div class="filter-step">
+        <h4>Step 3: fill-tags - Calculate Population Genetics Statistics</h4>
+        <div class="code-block">bcftools +fill-tags -- -t AC,AN,AF,MAF,HWE,ExcHet</div>
+        <ul>
+            <li><strong>+fill-tags:</strong> A bcftools plugin that calculates various statistics</li>
+            <li><strong>-t AC,AN,AF,MAF,HWE,ExcHet:</strong> Tags to calculate:
+                <ul>
+                    <li><code>AC</code>: Allele count</li>
+                    <li><code>AN</code>: Total number of alleles</li>
+                    <li><code>AF</code>: Allele frequency</li>
+                    <li><code>MAF</code>: Minor allele frequency</li>
+                    <li><code>HWE</code>: Hardy-Weinberg equilibrium p-value</li>
+                    <li><code>ExcHet</code>: Excess heterozygosity</li>
+                </ul>
+            </li>
+        </ul>
+    </div>
+
+    <div class="filter-step">
+        <h4>Step 4: Save Raw Variants</h4>
+        <div class="code-block">bcftools view -Oz > ${OUTDIR}/${PREFIX}.raw.vcf.gz</div>
+        <ul>
+            <li><strong>-Oz:</strong> Output compressed VCF format</li>
+            <li><strong>> ${OUTDIR}/${PREFIX}.raw.vcf.gz:</strong> Save raw unfiltered variants to file</li>
+        </ul>
+    </div>
+
+    <div class="filter-step">
+        <h4>Step 5: Load Raw Variants for Filtering</h4>
+        <div class="code-block">bcftools view ${OUTDIR}/${PREFIX}.raw.vcf.gz -O u 2>/dev/null</div>
+        <ul>
+            <li><strong>Read raw VCF:</strong> Load the previously saved raw variants</li>
+            <li><strong>-O u:</strong> Output uncompressed BCF for efficient piping</li>
+            <li><strong>2>/dev/null:</strong> Suppress warning messages</li>
+        </ul>
+    </div>
+
+    <div class="filter-step">
+        <h4>Step 6: SNP Type Filters</h4>
+        <div class="code-block">bcftools view --types snps | bcftools view -m2 -M2</div>
+        <ul>
+            <li><strong>--types snps:</strong> Keep only SNP variants (exclude indels)</li>
+            <li><strong>-m2 -M2:</strong> Keep only biallelic variants (exactly 2 alleles)</li>
+            <li><strong>Why:</strong> Focuses analysis on simple biallelic SNPs, which are easier to analyze and interpret</li>
+        </ul>
+    </div>
+
+    <div class="filter-step">
+        <h4>Step 7: Quality and Depth Filter</h4>
+        <div class="code-block">bcftools filter -e "QUAL&lt;${minQ} || INFO/DP&lt;${minDP}"</div>
+        <ul>
+            <li><strong>QUAL &lt; ${minQ}:</strong> Remove variants with quality score below 20</li>
+            <li><strong>INFO/DP &lt; ${minDP}:</strong> Remove variants with total depth below 10 reads</li>
+            <li><strong>Why:</strong> Low quality or low depth variants are more likely to be sequencing errors</li>
+            <li>These parameters need to be <strong>adjusted</strong> to the sequencing platform and coverage depth of your dataset</li>
+        </ul>
+    </div>
+
+    <div class="filter-step">
+        <h4>Step 8: Minor Allele Frequency Filter</h4>
+        <div class="code-block">bcftools filter -e "INFO/MAF[0] &lt; ${MIN_MINOR_ALLELE_FREQ}"</div>
+        <ul>
+            <li><strong>MAF[0] &lt; 0.01:</strong> Remove variants with minor allele frequency below 1%</li>
+            <li><strong>Note:</strong> The <code>[0]</code> indexes the first alternate allele</li>
+            <li><strong>Using variable:</strong> Threshold controlled by <code>MIN_MINOR_ALLELE_FREQ=0.01</code> for easy adjustment</li>
+            <li>This filter is particularly useful for multi-sample SNP calling to ignore sample-specific SNPs</li>
+        </ul>
+    </div>
+
+    <div class="filter-step">
+        <h4>Step 9: Mapping Quality Filter</h4>
+        <div class="code-block">bcftools filter -e "INFO/MQ &lt; ${MIN_MAPPING_QUALITY}" -Oz -o $OUTDIR/${SAMPLE}.flt3.vcf.gz</div>
+        <ul>
+            <li><strong>MQ &lt; 30:</strong> Remove variants with mean mapping quality below 30</li>
+            <li><strong>Using variable:</strong> Threshold controlled by <code>MIN_MAPPING_QUALITY=30</code> for easy adjustment</li>
+            <li><strong>Why:</strong> Low mapping quality suggests reads may map to multiple locations (repetitive regions)</li>
+            <li><strong>-Oz:</strong> Output compressed VCF format</li>
+            <li><strong>-o:</strong> Output file path with version suffix .flt3.vcf.gz</li>
+        </ul>
+    </div>
+
+    <div class="important">
+        <h4>📊 Summary of Filtering Parameters</h4>
+        <table>
+            <tr>
+                <th>Filter</th>
+                <th>Threshold (Variable)</th>
+                <th>Purpose</th>
+            </tr>
+            <tr>
+                <td>Quality (QUAL)</td>
+                <td>≥ 20 (<code>minQ</code>)</td>
+                <td>Ensure high confidence in variant call</td>
+            </tr>
+            <tr>
+                <td>Depth (DP)</td>
+                <td>≥ 10 (<code>minDP</code>)</td>
+                <td>Sufficient read coverage for reliable calling</td>
+            </tr>
+            <tr>
+                <td>Minor Allele Frequency (MAF)</td>
+                <td>≥ 0.01 (<code>MIN_MINOR_ALLELE_FREQ</code>)</td>
+                <td>Remove extremely rare variants (potential errors)</td>
+            </tr>
+            <tr>
+                <td>Mapping Quality (MQ)</td>
+                <td>≥ 30 (<code>MIN_MAPPING_QUALITY</code>)</td>
+                <td>Ensure reads map uniquely to the genome</td>
+            </tr>
+        </table>
+    </div>
+
+    <div class="tip">
+        <h4>💡 Pipeline Design Improvements</h4>
+        <ul>
+            <li><strong>Separate raw output:</strong> Raw variants are saved before filtering, allowing reprocessing with different parameters</li>
+            <li><strong>Configurable thresholds:</strong> All filters use variables at the top of the function for easy adjustment</li>
+            <li><strong>Progressive filtering:</strong> Each filter removes problematic variants, building confidence step by step</li>
+            <li><strong>Reusable function:</strong> The function can be called for multiple samples, ensuring consistent processing</li>
+            <li><strong>Modular filtering:</strong> Optional filters can be easily modified or removed based on project needs</li>
+        </ul>
+    </div>
+
+    <div class="warning">
+        <h4>⚠️ Important Notes for Target Capture Data</h4>
+        <ul>
+            <li><strong>Depth considerations:</strong> Target capture can have variable depth across regions. Consider adjusting <code>minDP</code> based on your capture efficiency.</li>
+            <li><strong>MAF thresholds:</strong> With small sample sizes, rare variants might be genuine. Adjust <code>MIN_MINOR_ALLELE_FREQ</code> based on your research questions.</li>
+            <li><strong>Single-sample calling:</strong> This pipeline calls variants per sample. For population studies, consider joint calling across all samples simultaneously.</li>
+        </ul>
+    </div>
+    <h3>Alternative: Multi-sample Calling</h3>
+    
+    <p>The commented line in the function shows how to adapt this for multiple samples:</p>
+    
+    <div class="code-block">
+# Create a list of BAM files for multi-sample calling
+ls $INDIR/*sorted.bam > bamlist.txt
+
+# Multi-sample calling using --bam-list
+bcftools mpileup -Ou -f $REF --bam-list bamlist.txt --threads 8 \
+                 --annotate INFO/AD,FORMAT/DP,FORMAT/AD \
+    | bcftools call -Ou -mv \
+    | [rest of filtering steps]
+    </div>
+
+<h2>Consensus Sequence Extraction Pipeline</h2>
+
+<p>This section details the process of extracting consensus sequences from variant calls. The pipeline generates a sample-specific consensus genome by integrating information from the reference genome, variant calls, and sequencing depth information.</p>
+
+<div class="tip">
+    <strong>🎯 Key Concept:</strong> Consensus sequences represent the most likely sequence for each sample, incorporating called variants while masking regions where we lack confidence due to low coverage.
+</div>
+
+<h3>The Consensus Extraction Function</h3>
+
+<div class="code-block">
+function extract_consensus { 
+    BAMINDIR=$1
+    VCFINDIR=$2
+    OUTDIR=$3
+    REF=$4
+    SAMPLE=$5
+
+    echo "EXTRACT CONSENSUS SEQUENCE FROM $REF REF AND $SAMPLE"
+
+    MIN_COVERAGE=2
+    BAM_FILE=$BAMINDIR/${SAMPLE}.sorted.bam
+
+    mkdir ${OUTDIR}/${SAMPLE}
+    
+    for HEADING in $(grep '>' $REF)
+    do
+        CHRM=${HEADING/>/}
+        echo "Processing $CHRM ..."
+        
+        # Create temporary directory
+        mkdir ${OUTDIR}/${CHRM}_${SAMPLE}_tmp
+        
+        # Mark low coverage areas
+        samtools depth -a -r $CHRM $BAM_FILE | \
+            awk -v min="$MIN_COVERAGE" '$3 &lt; min {print $1"\t"$2-1"\t"$2}' > \
+            ${OUTDIR}/${CHRM}_${SAMPLE}_tmp/low_coverage.bed
+        
+        # Generate consensus for this sample
+        samtools faidx $REF $CHRM | \
+            bcftools consensus -s ${SAMPLE} $VCFINDIR/${SAMPLE}.flt3.vcf.gz \
+                               -I \
+                               --mask ${OUTDIR}/${CHRM}_${SAMPLE}_tmp/low_coverage.bed \
+                               -o ${OUTDIR}/${CHRM}_${SAMPLE}_tmp/${SAMPLE}.fasta
+          
+        # Add sample name to header
+        sed -i "1s/^>.*/>${SAMPLE}/" ${OUTDIR}/${CHRM}_${SAMPLE}_tmp/${SAMPLE}.fasta
+        
+        # Collect results
+        cp ${OUTDIR}/${CHRM}_${SAMPLE}_tmp/${SAMPLE}.fasta ${OUTDIR}/${SAMPLE}/${CHRM}.fasta
+        
+        # Clean up temporary files
+        rm -rf ${OUTDIR}/${CHRM}_${SAMPLE}_tmp
+    done
+}
+    </div>
+
+<h3>Pipeline Steps Explained</h3>
+
+<div class="filter-step">
+    <h4>Step 1: Setup and Directory Structure</h4>
+    <div class="code-block">mkdir ${OUTDIR}/${SAMPLE}</div>
+    <ul>
+        <li><strong>Purpose:</strong> Creates a sample-specific output directory</li>
+        <li><strong>Organization:</strong> Each sample gets its own folder containing consensus sequences for all chromosomes/contigs</li>
+    </ul>
+</div>
+
+<div class="filter-step">
+    <h4>Step 2: Iterate Over Reference Sequences</h4>
+    <div class="code-block">for HEADING in $(grep '>' $REF)</div>
+    <ul>
+        <li><strong>Function:</strong> Extracts all sequence headers from the reference FASTA</li>
+        <li><strong>CHRM=${HEADING/>/}:</strong> Removes the '>' character to get clean chromosome/contig names</li>
+        <li><strong>Why:</strong> Processes each chromosome/contig independently to manage memory and enable parallel processing</li>
+    </ul>
+</div>
+
+<div class="filter-step">
+    <h4>Step 3: Temporary Directory Creation</h4>
+    <div class="code-block">mkdir ${OUTDIR}/${CHRM}_${SAMPLE}_tmp</div>
+    <ul>
+        <li><strong>Purpose:</strong> Creates chromosome-specific temporary directories</li>
+        <li><strong>Why unique directories:</strong> Prevents file conflicts when processing multiple chromosomes simultaneously</li>
+        <li><strong>Note:</strong> Each chromosome gets its own temp space for intermediate files</li>
+    </ul>
+</div>
+
+<div class="filter-step">
+    <h4>Step 4: Identify Low Coverage Regions</h4>
+    <div class="image-container">
+    <img src="low_coverage.jpg" alt="mapping shows SNPs visually">
+    <div class="caption">low coverage regions would have been treated as 'as as reference' just like the rest of the regions without SNPs. hence we need to mask them to indicate the lack of information</div>
+
+    <div class="code-block">samtools depth -a -r $CHRM $BAM_FILE | awk -v min="$MIN_COVERAGE" '$3 &lt; min {print $1"\t"$2-1"\t"$2}' > low_coverage.bed</div>
+    <ul>
+        <li><strong>samtools depth -a:</strong> Calculates depth at every position (-a includes zero-depth positions)</li>
+        <li><strong>-r $CHRM:</strong> Restricts analysis to current chromosome</li>
+        <li><strong>awk filter:</strong> Identifies positions where depth &lt; MIN_COVERAGE (set to 2)</li>
+        <li><strong>BED format:</strong> Outputs regions as 0-based intervals: <code>chromosome start end</code></li>
+        <li><strong>Why $2-1:</strong> Converts 1-based positions to 0-based BED format</li>
+    </ul>
+    
+    <div class="important">
+        <h4>📊 Example of low_coverage.bed</h4>
+        <div class="code-block" style="background-color: #f8f9fa; color: #333;">
+ENA|OZ297169|OZ297169.1 99      100
+ENA|OZ297169|OZ297169.1 145     146
+ENA|OZ297169|OZ297169.1 146     147
+        </div>
+        <p>Each line represents a single base position with &lt;2x coverage that will be masked.</p>
+    </div>
+</div>
+
+<div class="filter-step">
+    <h4>Step 5: Generate Consensus Sequence</h4>
+    <div class="code-block">samtools faidx $REF $CHRM | bcftools consensus -s ${SAMPLE} $VCFINDIR/${SAMPLE}.flt3.vcf.gz -I --mask low_coverage.bed -o ${SAMPLE}.fasta</div>
+    
+    <h5>Part A: Extract Reference Sequence</h5>
+    <div class="code-block">samtools faidx $REF $CHRM</div>
+    <ul>
+        <li><strong>faidx:</strong> Indexed FASTA access - extracts specific chromosome sequence</li>
+        <li><strong>Output:</strong> FASTA format sequence for the current chromosome</li>
+    </ul>
+    
+    <h5>Part B: Apply Variants and Masks</h5>
+    <div class="code-block">bcftools consensus -s ${SAMPLE} $VCFINDIR/${SAMPLE}.flt3.vcf.gz -I --mask low_coverage.bed</div>
+    <ul>
+        <li><strong>-s ${SAMPLE}:</strong> Specifies which sample to use from the VCF</li>
+        <li><strong>-I:</strong>  output variants in the form of IUPAC ambiguity codes</li>
+        <li><strong>--mask low_coverage.bed:</strong> Replace regions in BED file with 'N' (ambiguous bases)</li>
+        <li><strong>What it does:</strong> 
+            <ul>
+                <li>Starts with reference sequence</li>
+                <li>Applies all variant calls for this sample</li>
+                <li>Masks low coverage regions with 'N'</li>
+                <li>Outputs final consensus sequence</li>
+            </ul>
+        </li>
+    </ul>
+</div>
+
+<div class="filter-step">
+    <h4>Step 6: Update FASTA Header</h4>
+    <div class="code-block">sed -i "1s/^>.*/>${SAMPLE}/" ${OUTDIR}/${CHRM}_${SAMPLE}_tmp/${SAMPLE}.fasta</div>
+    <ul>
+        <li><strong>sed -i:</strong> Edit file in-place</li>
+        <li><strong>1s/^>.*/>${SAMPLE}/:</strong> Replace the first line's header with sample name</li>
+        <li><strong>Why:</strong> Original header contains reference chromosome name; we want sample name for downstream analysis</li>
+    </ul>
+    
+    <div class="param-detail">
+        <strong>Before:</strong> >ENA|OZ297169|OZ297169.1<br>
+        <strong>After:</strong> >potamogeton_95
+    </div>
+</div>
+
+<div class="filter-step">
+    <h4>Step 7: Collect Results and Clean Up</h4>
+    <div class="code-block">cp ${SAMPLE}.fasta ${OUTDIR}/${SAMPLE}/${CHRM}.fasta</div>
+    <div class="code-block">rm -rf ${OUTDIR}/${CHRM}_${SAMPLE}_tmp</div>
+    <ul>
+        <li><strong>cp:</strong> Copies final consensus to sample-specific output directory</li>
+        <li><strong>rm -rf:</strong> Removes temporary files to save space</li>
+        <li><strong>Result:</strong> Clean directory structure with per-chromosome consensus files</li>
+    </ul>
+</div>
+
+<h3>Final Output Structure</h3>
+
+<div class="code-block" style="background-color: #f8f9fa; color: #333;">
+${OUTDIR}/
+├── ${SAMPLE}/
+│   ├── ENA|OZ297169|OZ297169.1.fasta
+│   ├── ENA|OZ297170|OZ297170.1.fasta
+│   ├── ENA|OZ297171|OZ297171.1.fasta
+│   └── ...
+└── [temporary directories removed]
+</div>
+
+<div class="important">
+    <h4>📊 Summary of Parameters</h4>
+    <table>
+        <tr>
+            <th>Parameter</th>
+            <th>Value</th>
+            <th>Purpose</th>
+        </tr>
+        <tr>
+            <td>MIN_COVERAGE</td>
+            <td>2</td>
+            <td>Minimum depth required to call a base; positions below this become 'N'</td>
+        </tr>
+        <tr>
+            <td>-I (consensus)</td>
+            <td>Flag</td>
+            <td>Ignore missing genotypes - treat uncalled sites as reference</td>
+        </tr>
+        <tr>
+            <td>--mask</td>
+            <td>BED file</td>
+            <td>Regions to mask with 'N' (low confidence areas)</td>
+        </tr>
+    </table>
+</div>
+
+<div class="tip">
+    <h4>💡 Key Considerations for Consensus Generation</h4>
+    <ul>
+        <li><strong>Coverage threshold:</strong> MIN_COVERAGE=2 is minimal; consider increasing to 3-5 for higher confidence</li>
+        <li><strong>Memory management:</strong> Processing per-chromosome prevents memory issues with large genomes</li>
+        <li><strong>Missing data:</strong> Low coverage regions become 'N's - track these for downstream analyses</li>
+        <li><strong>Heterozygosity:</strong> This method is susceptible to paralogs and will create chimera. That's why it's better to pull the reads (similar to mapping stage, or blast) and do de novo assembly. 
+        This is exactly what hybpiper, easy353, or captus does.</li>
+    </ul>
+</div>
+
+<h2>Multiple Sequence Alignment and Phylogenetic Inference</h2>
+
+<p>This section details the process of generating multiple sequence alignments and inferring phylogenetic trees for each gene captured in your target enrichment experiment. Unlike previous steps that operated on a sample basis (array for samples), these steps are parallelized <strong>by gene</strong> using SLURM array jobs.</p>
+
+<div class="tip">
+    <strong>🧬 Key Concept:</strong> Instead of processing one sample at a time, we now process one gene at a time, collecting sequences for that gene from all samples. This gene-centric approach is ideal for downstream phylogenomic studies where we want to understand the evolutionary history of each locus.
+</div>
+
+<h3>Gene Array Selection</h3>
+
+<p>Before running the alignment and phylogeny functions, we need to select which gene to process in the current SLURM array task. Genes are selected from the same reference file (bait set) we used for mapping and SNP calling:</p>
+
+<div class="code-block">
+# Get the Nth gene from the bait set FASTA file
+GENE=$(grep '>' $BAITS | sed -n "${SLURM_ARRAY_TASK_ID}p" | cut -d '>' -f 2)
+</div>
+
+<div class="filter-step">
+    <h4>Gene Selection Explained</h4>
+    <ul>
+        <li><strong>grep '>' $BAITS:</strong> Extracts all header lines (containing '>') from the bait FASTA file</li>
+        <li><strong>sed -n "${SLURM_ARRAY_TASK_ID}p":</strong> Selects only the line corresponding to the current array task ID</li>
+        <li><strong>cut -d '>' -f 2:</strong> Removes the '>' character to get clean gene names</li>
+        <li><strong>Result:</strong> Each array task processes a different gene, enabling massive parallelization</li>
+    </ul>
+    
+    <div class="param-detail">
+        <strong>Example:</strong> If BAITS contains:
+        <pre>>gene_001
+ATCG...
+>gene_002
+ATCG...</pre>
+        For SLURM_ARRAY_TASK_ID=1, GENE="gene_001"
+    </div>
+</div>
+
+<h3>Alignment Function</h3>
+
+<div class="code-block">
+function easy353_mafft {
+    INDIR=$1
+    OUTDIR=$2
+    GENE=$3
+
+    echo "Compiling and aligning ${GENE}"
+    
+    # Collect sequences for this gene from all samples
+    cat $INDIR/*/${GENE}.fasta > ${OUTDIR}/tmp_${GENE}.fasta
+    
+    # Run MAFFT alignment
+    mafft --maxiterate 10000 $OUTDIR/tmp_${GENE}.fasta > $OUTDIR/${GENE}.fasta
+    
+    # Clean up temporary file
+    rm -f $OUTDIR/tmp_${GENE}.fasta
+    
+    # Remove any spaces that might cause trouble later
+    sed -i 's/ //g' $OUTDIR/${GENE}.fasta
+}
+</div>
+
+<div class="filter-step">
+    <h4>Step 1: Sequence Compilation</h4>
+    <div class="code-block">cat $INDIR/*/${GENE}.fasta > ${OUTDIR}/tmp_${GENE}.fasta</div>
+    <ul>
+        <li><strong>Purpose:</strong> Collects the consensus sequence for this gene from every sample</li>
+        <li><strong>Directory structure:</strong> Assumes each sample has its own subdirectory with per-gene FASTA files</li>
+        <li><strong>Example:</strong> If INDIR contains <code>sample1/gene_001.fasta</code>, <code>sample2/gene_001.fasta</code>, etc., they are concatenated into a single multi-FASTA file</li>
+    </ul>
+    
+    <div class="param-detail">
+        <strong>Before compilation:</strong>
+        <pre>sample1/gene_001.fasta: >sample1\nATCG...
+sample2/gene_001.fasta: >sample2\nATCG...</pre>
+        <strong>After compilation (tmp_gene_001.fasta):</strong>
+        <pre>>sample1
+ATCG...
+>sample2
+ATCG...</pre>
+    </div>
+</div>
+
+<div class="filter-step">
+    <h4>Step 2: Multiple Sequence Alignment with MAFFT</h4>
+    <div class="code-block">mafft --maxiterate 10000 $OUTDIR/tmp_${GENE}.fasta > $OUTDIR/${GENE}.fasta</div>
+    <ul>
+        <li><strong>mafft:</strong> Multiple Alignment using Fast Fourier Transform - one of the most accurate and efficient alignment programs</li>
+        <li><strong>--maxiterate 10000:</strong> Sets maximum number of iterative refinement cycles
+            <ul>
+                <li>Higher values = more accurate but slower</li>
+                <li>10000 is very conservative, ensuring convergence</li>
+                <li>For closely related sequences, lower values (100-1000) may suffice</li>
+            </ul>
+        </li>
+        <li><strong>Why MAFFT:</strong> Excellent balance of speed and accuracy for nucleotide sequences</li>
+        <li><strong>Output:</strong> Aligned multi-FASTA file with gaps (-) inserted to maintain homology</li>
+    </ul>
+</div>
+
+<div class="filter-step">
+    <h4>Step 3: Cleanup and Formatting</h4>
+    <div class="code-block">sed -i 's/ //g' $OUTDIR/${GENE}.fasta</div>
+    <ul>
+        <li><strong>sed -i 's/ //g':</strong> Removes all spaces from the file (in-place editing)</li>
+        <li><strong>Why:</strong> Some downstream tools (including IQ-TREE) can choke on unexpected whitespace in FASTA files</li>
+        <li><strong>Safety measure:</strong> Ensures clean input for phylogenetic inference</li>
+    </ul>
+</div>
+
+<div class="important">
+    <h4>📊 MAFFT Parameters Summary</h4>
+    <table>
+        <tr>
+            <th>Parameter</th>
+            <th>Value</th>
+            <th>Effect</th>
+        </tr>
+        <tr>
+            <td>--maxiterate</td>
+            <td>10000</td>
+            <td>High accuracy, suitable for divergent sequences or when alignment uncertainty is high</td>
+        </tr>
+        <tr>
+            <td>Default algorithm</td>
+            <td>FFT-NS-i</td>
+            <td>Progressive method with iterative refinement (auto-selected with --maxiterate)</td>
+        </tr>
+    </table>
+</div>
+
+<h3>Phylogenetic Inference Function</h3>
+
+<div class="code-block">
+function iqtree_per_gene {
+    INDIR=$1
+    OUTDIR=$2
+    GENE=$3
+
+    mkdir $OUTDIR/$GENE
+    cp $INDIR/${GENE}.fasta $OUTDIR/$GENE
+    
+    iqtree -s $OUTDIR/$GENE/${GENE}.fasta \
+           -bb 1000 \
+           -redo \
+           -safe
+    
+    mv $OUTDIR/$GENE/*treefile $OUTDIR
+    rm -rf $OUTDIR/$GENE
+}
+</div>
+
+<div class="filter-step">
+    <h4>Step 1: Setup Gene-Specific Directory</h4>
+    <div class="code-block">mkdir $OUTDIR/$GENE</div>
+    <div class="code-block">cp $INDIR/${GENE}.fasta $OUTDIR/$GENE</div>
+    <ul>
+        <li><strong>Purpose:</strong> Creates an isolated working directory for each gene</li>
+        <li><strong>Why:</strong> IQ-TREE generates multiple output files; this prevents cross-gene contamination</li>
+        <li><strong>Clean approach:</strong> Each gene runs in its own sandbox</li>
+    </ul>
+</div>
+
+<div class="filter-step">
+    <h4>Step 2: IQ-TREE Phylogenetic Inference</h4>
+    <div class="code-block">iqtree -s $OUTDIR/$GENE/${GENE}.fasta -bb 1000 -redo -safe</div>
+    
+    <h5>Parameter Breakdown:</h5>
+    <ul>
+        <li><strong>-s:</strong> Input alignment file</li>
+        <li><strong>-bb 1000:</strong> Ultrafast bootstrap with 1000 replicates
+            <ul>
+                <li>Assesses branch support by resampling alignment sites</li>
+                <li>1000 replicates provides stable support values</li>
+                <li>Values closer to 100% indicate strong support</li>
+            </ul>
+        </li>
+        <li><strong>-redo:</strong> Overwrites previous output files if they exist</li>
+        <li><strong>-safe:</strong> Safe mode - handles problematic taxon names (e.g., special characters)</li>
+    </ul>
+    
+    <div class="tip">
+        <strong>🔍 IQ-TREE automatically:</strong>
+        <ul>
+            <li>Selects the best-fit substitution model using ModelFinder</li>
+            <li>Performs tree search to find the maximum likelihood tree</li>
+            <li>Calculates branch support via ultrafast bootstrap</li>
+            <li>Writes multiple output files with results and statistics</li>
+        </ul>
+    </div>
+</div>
+
+<div class="filter-step">
+    <h4>Step 3: Collect Results and Clean Up</h4>
+    <div class="code-block">mv $OUTDIR/$GENE/*treefile $OUTDIR</div>
+    <div class="code-block">rm -rf $OUTDIR/$GENE</div>
+    <ul>
+        <li><strong>mv *treefile:</strong> Moves only the tree file to the main output directory</li>
+        <li><strong>Tree file format:</strong> Newick format containing the phylogenetic tree</li>
+        <li><strong>rm -rf:</strong> Removes the gene-specific working directory and all intermediate files</li>
+        <li><strong>Result:</strong> Clean output with just the essential tree files for each gene</li>
+    </ul>
+</div>
+
+<h3>Integration in Main Pipeline</h3>
+
+<div class="code-block">
+# STEP 5: ALIGNMENT - GENE ARRAY
+easy353_mafft $RESULT4 $RESULT5 $GENE
+
+# STEP 6: PHYLOGENY - GENE ARRAY
+iqtree_per_gene $RESULT5 $RESULT6 $GENE
+</div>
+
+<div class="important">
+    <h4>📊 Directory Structure Throughout Pipeline</h4>
+    <table>
+        <tr>
+            <th>Variable</th>
+            <th>Contents</th>
+            <th>Example Path</th>
+        </tr>
+        <tr>
+            <td>$DATA</td>
+            <td>Per-sample raw fastq</td>
+            <td><code>Target_capture/00_DATA/ERR776786_1.fastq.gz</code></td>
+        </tr>
+        <tr>
+            <td>$RESULT1</td>
+            <td>Per-sample fastq cleaned</td>
+            <td><code>Target_capture/01_CLEANED/ERR776786_R1.fq.gz</code></td>
+        </tr>
+        <tr>
+            <td>$RESULT2</td>
+            <td>Per-sample mapping sorted bam files</td>
+            <td><code>Target_capture/02_MAPPING/ERR776786.sorted.bam</code></td>
+        </tr>
+        <tr>
+            <td>$RESULT3</td>
+            <td>Per-sample vcf (SNP calling files)</td>
+            <td><code>Target_capture/03_VCF/ERR776786.flt3.vcf.gz</code></td>
+        </tr>
+        <tr>
+            <td>$RESULT4</td>
+            <td>Per-sample, per-gene consensus FASTA files</td>
+            <td><code>Target_capture/04_consensus/ERR776786/gene_001.fasta</code></td>
+        </tr>
+        <tr>
+            <td>$RESULT5</td>
+            <td>Per-gene alignments (compiled from all samples)</td>
+            <td><code>Target_capture/05_alignments/gene_001.fasta</code></td>
+        </tr>
+        <tr>
+            <td>$RESULT6</td>
+            <td>Per-gene phylogenetic trees</td>
+            <td><code>Target_capture/06_trees/gene_001.treefile</code></td>
+        </tr>
+    </table>
+</div>
+
+<div class="tip">
+    <h4>💡 Array Job Parallelization Strategy</h4>
+    <ul>
+        <li><strong>By gene, not by sample:</strong> Each task processes one gene across all samples</li>
+        <li><strong>Scalability:</strong> If you have 100 genes, you can run 100 simultaneous array tasks</li>
+        <li><strong>Resource efficiency:</strong> Genes with similar lengths have similar computational requirements</li>
+
+<div class="warning">
+    <h4>⚠️ Important Considerations for Phylogenomic Analysis</h4>
+    <ul>
+        <li><strong>Alignment quality:</strong> Check alignments manually for a subset of genes - MAFFT parameters may need adjustment for highly divergent sequences</li>
+        <li><strong>Bootstraps:</strong> 1000 replicates is standard, but for preliminary analyses, 100-500 may suffice</li>
+        <li><strong>Gene tree discordance:</strong> Expect variation - not all genes share the same evolutionary history</li>
+        <li><strong>Missing data:</strong> Some samples may lack sequences for some genes; IQ-TREE handles this gracefully but note it in interpretation</li>
+    </ul>
+</div>
+
+
+<h3>Understanding IQ-TREE Output Files</h3>
+
+<table>
+    <tr>
+        <th>File Extension</th>
+        <th>Contents</th>
+        <th>Use</th>
+    </tr>
+    <tr>
+        <td>.treefile</td>
+        <td>Maximum likelihood tree in Newick format</td>
+        <td>Visualization, downstream analysis</td>
+    </tr>
+    <tr>
+        <td>.iqtree</td>
+        <td>Full analysis report (model, parameters, tree)</td>
+        <td>Documentation, model checking</td>
+    </tr>
+    <tr>
+        <td>.log</td>
+        <td>Run log with progress and warnings</td>
+        <td>Troubleshooting</td>
+    </tr>
+    <tr>
+        <td>.model.gz</td>
+        <td>Model parameters and likelihoods</td>
+        <td>Advanced model comparison</td>
+    </tr>
+</table>
+
+
+
+<h2>🚀 Running the Pipeline (The <code>main</code> Function)</h2>
+<p>The <code>main</code> function orchestrates the workflow. It sets up directories, defines key paths, and executes the analysis functions. Note the use of <code>SLURM_ARRAY_TASK_ID</code> to process samples and genes in parallel.</p>
+
+<div class="code-block">
+function main {
+
+WORKDIR=$SCRATCH/Target_capture #your working directory for this exercise  
+METADATA=$HOME/projects/rbge/atam/Target_Capture_tutorial/metadata.csv
+BAITS=$WORKDIR/CK_GIT/Ref.fna
+REF=$WORKDIR/References #YOU CAN BUILD A REFERENCE DIR IN PROJECT. WE WILL TALK ABOUT THAT LATER
+
+
+DATA=$WORKDIR/00_DATA
+RESULT1=$WORKDIR/01_CLEANED
+RESULT2=$WORKDIR/02_MAPPING
+RESULT3=$WORKDIR/03_VCF
+RESULT4=$WORKDIR/04_EXTRACTS
+RESULT5=$WORKDIR/05_ALIGNMENTS
+RESULT6=$WORKDIR/06_TREES
+
+
+#setup 
+function setup_dir {
+
+mkdir $WORKDIR/CK_GIT -p
+mkdir $REF -p
+mkdir $DATA -p
+mkdir $RESULT1 -p
+mkdir $RESULT2 -p
+mkdir $RESULT3 -p
+mkdir $RESULT4 -p
+mkdir $RESULT5 -p
+mkdir $RESULT6 -p
+}
+
+setup_dir
+#===========================================================================================
+#EXECUTE 
+
+#setup_conda QC
+#download_ena $DATA
+#GET REFERENCE 
+#git clone https://github.com/ckidner/Targeted_enrichment.git $WORKDIR/CK_GIT
+
+
+#ANALYSIS
+
+#SAMPLE ARRAY: 
+#SLURM_ARRAY_TASK_ID=2
+SAMPLE=$(sed -n "${SLURM_ARRAY_TASK_ID}p" ${METADATA} | cut -d ',' -f1)
+echo $SAMPLE
+
+#STEP 1: CLEANING UP READS AND QC REPORT; SAMPLE ARRAY
+#fastp_qc $DATA $RESULT1 $SAMPLE
+
+#STEP 2: MAPPING: SAMPLE ARRAY
+#make index
+#bwa index $BAITS
+#bwa_map $RESULT1 $BAITS $RESULT2 $SAMPLE
+
+#STEP 3: SNP CALLING: SAMPLE ARRAY
+
+#snp_calling $RESULT2 $RESULT3 $BAITS $SAMPLE
+
+#STEP 4: CONSENSUS; SAMPLE ARRAY
+#extract_consensus  $RESULT2 $RESULT3 $RESULT4 $BAITS $SAMPLE
+
+#===========================================================================================
+#GENE ARRAY
+GENE=$(grep '>' $BAITS|sed -n "${SLURM_ARRAY_TASK_ID}p"|cut -d '>' -f 2) #get the Nth gene in the bait set (fasta), remove > from heading
+echo $GENE
+
+#GENE=comp41081_c0_seq1
+
+#STEP 5: ALIGNMENT; GENE ARRAY
+easy353_mafft $RESULT4 $RESULT5 $GENE
+
+#STEP 6: PHYLOGENY: GENE ARRAY
+iqtree_per_gene $RESULT5 $RESULT6 $GENE
+
+}
+
+main
+
+</div>
+
+<h2>📌 Summary & Best Practices</h2>
+<ul>
+    <li><strong>Modularity:</strong> Functions keep the pipeline organized and debuggable.</li>
+    <li><strong>Parameter Selection:</strong> Always question legacy parameters. Q20 is the new Q15 for modern data.</li>
+    <li><strong>Target Capture Nuances:</strong> Use <code>--trim_poly_g</code>, be lenient with read length (<code>--length_required 36</code>), and use sensitive mappers (BWA-MEM).</li>
+    <li><strong>SLURM Integration:</strong> Array jobs allow scaling to hundreds of samples. Use <code>--array</code> and <code>SLURM_ARRAY_TASK_ID</code> to parallelize effectively.</li>
+</ul>
+</body>
+</html>
