@@ -1,0 +1,592 @@
+html
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Workshop: Building Modular Bioinformatics Workflows with SLURM</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+            color: #333;
+        }
+        h1 {
+            color: #2c3e50;
+            border-bottom: 3px solid #3498db;
+            padding-bottom: 10px;
+        }
+        h2 {
+            color: #2980b9;
+            margin-top: 30px;
+            border-left: 4px solid #3498db;
+            padding-left: 10px;
+        }
+        h3 {
+            color: #34495e;
+        }
+        h4 {
+            color: #2c3e50;
+            margin-bottom: 5px;
+        }
+        .code-block {
+            background-color: #2c3e50;
+            color: #ecf0f1;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 15px 0;
+            overflow-x: auto;
+            font-family: 'Courier New', monospace;
+            border-left: 4px solid #e74c3c;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        .important {
+            background-color: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 15px;
+            margin: 15px 0;
+            border-radius: 5px;
+        }
+        .tip {
+            background-color: #d1ecf1;
+            border-left: 4px solid #17a2b8;
+            padding: 15px;
+            margin: 15px 0;
+            border-radius: 5px;
+        }
+        .warning {
+            background-color: #f8d7da;
+            border-left: 4px solid #dc3545;
+            padding: 15px;
+            margin: 15px 0;
+            border-radius: 5px;
+        }
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 20px 0;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 12px;
+            text-align: left;
+        }
+        th {
+            background-color: #3498db;
+            color: white;
+        }
+        tr:nth-child(even) {
+            background-color: #f2f2f2;
+        }
+        .exercise {
+            background-color: #e8f4fc;
+            border: 2px dashed #3498db;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 5px;
+        }
+        .file-structure {
+            background-color: #2c3e50;
+            color: #ecf0f1;
+            padding: 15px;
+            border-radius: 5px;
+            font-family: 'Courier New', monospace;
+            line-height: 1.8;
+        }
+        .function-card {
+            background-color: #ffffff;
+            border: 1px solid #bdc3c7;
+            border-radius: 5px;
+            padding: 15px;
+            margin: 15px 0;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .function-name {
+            background-color: #3498db;
+            color: white;
+            padding: 5px 10px;
+            border-radius: 3px;
+            display: inline-block;
+            font-family: monospace;
+            font-weight: bold;
+        }
+        .slurm-highlight {
+            background-color: #e8f8f5;
+            border: 2px solid #1abc9c;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 15px 0;
+        }
+        .architecture-diagram {
+            background-color: #f8f9fa;
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+            font-family: monospace;
+        }
+    </style>
+</head>
+<body>
+    <h1>🏗️ Building Modular Bioinformatics Workflows with SLURM</h1>
+    
+    <div class="tip">
+        <strong>🎯 Learning Objectives:</strong> By the end of this workshop, you will understand:
+        <ul>
+            <li>How to create modular, reusable bioinformatics functions</li>
+            <li>Design patterns for building your own analysis package</li>
+            <li>SLURM job array management and dependency tracking</li>
+            <li>Separation of workflow logic from execution logic</li>
+            <li>Best practices for scalable HPC workflows</li>
+        </ul>
+    </div>
+
+    <h2>1. The Architecture: Two-File System</h2>
+    
+    <div class="architecture-diagram">
+        <pre>
+┌─────────────────────────────────────────────────────────┐
+│                    Captus_master.sh (Controller)                │
+│  ┌──────────────────────────────────────────────────┐   │
+│  │  main() {                                        │   │
+│  │    • Sets up directories                         │   │
+│  │    • Defines workflow functions                   │   │
+│  │    • Manages job submission                       │   │
+│  │    • Controls execution order                     │   │
+│  │  }                                               │   │
+│  └──────────────────────────────────────────────────┘   │
+│                           │                               │
+│                           ▼                               │
+│                    Calls functions                        │
+│                           │                               │
+└───────────────────────────┼─────────────────────────────┘
+                            │
+                            ▼
+┌─────────────────────────────────────────────────────────┐
+│              Captus_functions.sh (Worker)                │
+│  ┌──────────────────────────────────────────────────┐   │
+│  │  Function Library:                               │   │
+│  │  • captus_clean()  - Array job                   │   │
+│  │  • captus_assembly() - Array job                  │   │
+│  │  • captus_extract() - Array job                   │   │
+│  │  • captus_align()   - Single job                  │   │
+│  │  • IQTree()        - Array job                    │   │
+│  └──────────────────────────────────────────────────┘   │
+│                           │                               │
+│                    case statement                         │
+│                    routes calls                           │
+└─────────────────────────────────────────────────────────┘
+        </pre>
+        <div class="caption">Figure 1: Two-file architecture for workflow management</div>
+    </div>
+
+    <div class="important">
+        <strong>🔑 Key Design Principle:</strong> Separation of Concerns
+        <ul>
+            <li><strong>Captus.sh:</strong> The "conductor" - orchestrates the workflow, manages dependencies, submits jobs</li>
+            <li><strong>Functions_captus.sh:</strong> The "musicians" - contain the actual analysis code, can be called independently</li>
+        </ul>
+    </div>
+
+    <h2>2. Creating Your Own Package: Functions as Building Blocks</h2>
+
+    <div class="function-card">
+        <h3>2.1 The Function Library Pattern</h3>
+        <p>Each analysis step is encapsulated in its own function, making it:</p>
+        <ul>
+            <li><strong>Reusable:</strong> Call the same function with different parameters</li>
+            <li><strong>Testable:</strong> Test each function independently</li>
+            <li><strong>Maintainable:</strong> Update one function without breaking others</li>
+            <li><strong>Portable:</strong> Functions can be copied to other projects</li>
+        </ul>
+    </div>
+
+    <h4>Example: Clean Function Structure</h4>
+    <div class="code-block">
+# In Functions_captus.sh:
+function captus_clean {
+    INDIR=$1    # Input directory
+    OUTDIR=$2   # Output directory
+    SAMPLE=$3   # Sample name (from array task)
+    
+    # ANALYSIS CODE
+    ls $INDIR/${SAMPLE}_R1.fq.gz  # Verify input exists
+    captus clean --reads $INDIR/${SAMPLE}_R1.fq.gz $INDIR/${SAMPLE}_R2.fq.gz \
+                 --out $OUTDIR \
+                 --overwrite
+}
+    </div>
+
+    <h4>Making Functions Callable from Outside</h4>
+    <div class="important">
+this is where we collect user inputs and pass to the actual functions 
+
+        </div>
+    <div class="code-block">
+# The "Router" - case statement at the end of Functions_captus.sh
+case "$1" in
+    captus_clean)
+        # $1 = function name, $2 = metadata, $3 = INDIR, $4 = OUTDIR, SAMPLE from array
+        captus_clean $3 $4 $SAMPLE
+        ;;
+    captus_assembly)
+        captus_assembly $3 $4 $SAMPLE
+        ;;
+    captus_extract)
+        captus_extract $3 $4 $5 $SAMPLE  # Note: $5 is BAITS file
+        ;;
+    captus_align)
+        captus_align $3 $4
+        ;;
+    IQTree)
+        IQTree $3 $4
+        ;;
+    *)
+        echo "Usage: $0 {captus_clean|captus_assembly|...}"
+        exit 1
+        ;;
+esac
+    </div>
+
+    <div class="tip">
+        <strong>💡 Package Creation Pattern:</strong>
+        <ol>
+            <li><strong>Define functions:</strong> Each does ONE thing well</li>
+            <li><strong>Create router:</strong> case statement directs calls</li>
+            <li><strong>Export functions:</strong> Make them available to sbatch</li>
+            <li><strong>Document inputs:</strong> Comment what each parameter does</li>
+        </ol>
+    </div>
+
+    <h2>3. SLURM Job Management</h2>
+
+    <h3>3.1 Job Arrays: Parallel Processing</h3>
+    
+    <div class="slurm-highlight">
+        <h4>What are Job Arrays?</h4>
+        <p>Job arrays allow you to submit a collection of jobs with a single sbatch command. Each sub-job has its own <code>SLURM_ARRAY_TASK_ID</code> environment variable.</p>
+    </div>
+
+    <div class="code-block">
+# In Captus.sh - Submitting an array job
+function captus_clean {
+    JOB1=$(sbatch --array=1-4 \           # Run 4 parallel jobs (samples 1-4)
+                  --cpus-per-task=4 \      # Each job gets 4 CPUs
+                  --mem=4G \                # Each job gets 4GB memory
+                  --job-name="CLEANING" \   # Job name for tracking
+                  $SCRIPTS/Functions_captus.sh captus_clean $METADATA $DATA $RESULT1 \
+                  | awk '{print $4}')       # Capture JobID
+    echo "Job $JOB1 submitted"
+}
+
+# In Functions_captus.sh - Using the array ID
+SAMPLE=$(sed -n "${SLURM_ARRAY_TASK_ID}p" ${METADATA} | cut -d ',' -f1)
+# This gets the Nth line from metadata file based on array task ID
+    </div>
+
+    <h3>3.2 Job Dependencies and Tracking</h3>
+
+    <div class="function-card">
+        <h4>Capturing Job IDs</h4>
+        <div class="code-block">
+# Submit job and capture its ID
+JOB1=$(sbatch ... | awk '{print $4}')
+echo "Job $JOB1 submitted"
+
+# Use captured ID for dependencies
+JOB2=$(sbatch --dependency=afterok:$JOB1 ... | awk '{print $4}')
+        </div>
+    </div>
+
+    <div class="function-card">
+        <h4>Different Job Types in Workflow</h4>
+        <table>
+            <tr>
+                <th>Job Type</th>
+                <th>Example</th>
+                <th>When to Use</th>
+            </tr>
+            <tr>
+                <td>Array Jobs</td>
+                <td><code>--array=1-4</code></td>
+                <td>Sample-level operations (cleaning, assembly, extraction)</td>
+            </tr>
+            <tr>
+                <td>Single Jobs</td>
+                <td>No array flag</td>
+                <td>Cross-sample operations (alignment, concatenation)</td>
+            </tr>
+            <tr>
+                <td>Dependent Jobs</td>
+                <td><code>--dependency=afterok:$JOBID</code></td>
+                <td>Pipeline steps that must wait for previous steps</td>
+            </tr>
+        </table>
+    </div>
+
+    <h3>3.3 Resource Management</h3>
+
+    <div class="code-block">
+# Each function specifies its own resource requirements
+function captus_clean {
+    # Light resource usage
+    sbatch --array=1-4 --cpus-per-task=4 --mem=4G ...
+}
+
+function captus_extract {
+    # Heavier memory requirements
+    sbatch --array=2,3 --cpus-per-task=4 --mem=16G ...
+}
+
+function captus_align {
+    # Single job, but parallelized internally by captus
+    sbatch --cpus-per-task=4 --mem=16G ...
+}
+
+function IQTree {
+    # Many small jobs
+    sbatch --array=1-152 --cpus-per-task=2 --mem=2G ...
+}
+    </div>
+
+    <div class="warning">
+        <strong>⚠️ Critical Considerations:</strong>
+        <ul>
+            <li><strong>Memory per job:</strong> Array jobs each get the specified memory</li>
+            <li><strong>CPU allocation:</strong> Total CPUs = array_size × cpus-per-task</li>
+            <li><strong>Scratch space:</strong> Temporary files need independent directories in parallel jobs</li>
+        </ul>
+    </div>
+
+    <h2>4. The Metadata-Driven Pattern</h2>
+
+    <div class="important">
+        <strong>📊 Metadata File Structure:</strong>
+        <div class="code-block">
+# metadata_captus.csv (example)
+sample_id,species,location
+Sample1,Rhododendron sp.,SiteA
+Sample2,Rhododendron sp.,SiteB
+Sample3,Rhododendron sp.,SiteC
+Sample4,Rhododendron sp.,SiteD
+        </div>
+    </div>
+
+    <div class="code-block">
+# In Functions_captus.sh - Accessing metadata
+SAMPLE=$(sed -n "${SLURM_ARRAY_TASK_ID}p" ${METADATA} | cut -d ',' -f1)
+# sed -n "${SLURM_ARRAY_TASK_ID}p"  → Get line matching array ID
+# cut -d ',' -f1                    → Extract first field (sample ID)
+
+# This pattern:
+# - Makes workflow sample-agnostic
+# - Easy to add/remove samples (just update metadata)
+# - Array size automatically matches number of samples
+    </div>
+
+    <h2>5. Temporary File Management in Parallel Jobs</h2>
+
+    <div class="code-block">
+function captus_assembly {
+    INDIR=$1
+    OUTDIR=$2
+    SAMPLE=$3
+    
+    # Use sample-specific temp directory to avoid conflicts
+    captus assemble --reads ... \
+                    --tmp_dir $OUTDIR/${SAMPLE} \  # Unique per sample
+                    --overwrite
+    
+    # Clean up after yourself
+    rm -rf $OUTDIR/${SAMPLE}  # Remove temp files when done
+}
+
+function captus_extract {
+    INDIR=$1
+    OUTDIR=$2
+    BAITS=$3
+    SAMPLE=$4
+    
+    # Create temporary directory for this sample
+    captus extract -a $OUTDIR/tmp_${SAMPLE} \  # Sample-specific temp
+    
+    # Clean up
+    rm -rf $OUTDIR/tmp_${SAMPLE} $INDIR/${SAMPLE}__captus-asm/01_assembly/${SAMPLE}.fasta
+}
+    </div>
+
+    <div class="tip">
+        <strong>🔧 Best Practice:</strong> Always use sample-specific temporary directories when running parallel jobs to prevent:
+        <ul>
+            <li>File write conflicts (two jobs writing to same file)</li>
+            <li>Accidental file deletion (one job removing another's files)</li>
+            <li>Resource contention (multiple jobs competing for same temp space)</li>
+        </ul>
+    </div>
+
+    <h2>6. Complete Workflow Control</h2>
+
+    <div class="function-card">
+        <h4>Captus.sh - The Workflow Controller</h4>
+        <div class="code-block">
+function main {
+    # Setup
+    setup_dir
+    conda activate captus
+    
+    # STEP 0: Cleaning - Array job (4 samples)
+    captus_clean
+    
+    # STEP 1: Assembly - Array job (depends on cleaning)
+    # In production, you'd add: --dependency=afterok:$JOB1
+    captus_assemble
+    
+    # STEP 2: Extract - Array job (only samples 2,3)
+    captus_extract
+    
+    # STEP 3: Align - Single job (parallelized internally)
+    captus_align
+    
+    # STEP 4: Tree - Multiple array jobs (different partitions)
+    IQTree $RESULT4/03_trimmed/06_informed/01_coding_NUC/02_NT $RESULT5/coding_NUC '1-152'
+    IQTree $RESULT4/03_trimmed/06_informed/02_coding_PTD/02_NT $RESULT5/coding_PTD '1-52'
+    IQTree $RESULT4/03_trimmed/06_informed/03_coding_MIT/02_NT $RESULT5/coding_MIT '1-34'
+}
+
+# Execution control - comment/uncomment steps as needed
+# captus_clean
+# captus_assemble
+# captus_extract
+# captus_align
+IQTree ...  # Only run tree building
+        </div>
+    </div>
+
+    <div class="important">
+        <h4>🎮 Execution Control Patterns:</h4>
+        <ul>
+            <li><strong>Comment/uncomment functions:</strong> Run specific workflow steps</li>
+            <li><strong>Job dependencies:</strong> Ensure steps run in correct order</li>
+            <li><strong>Array ranges:</strong> Process specific samples (e.g., --array=2,3)</li>
+            <li><strong>Multiple arrays:</strong> Different partitions with different ranges</li>
+        </ul>
+    </div>
+
+    <h2>7. Practical Exercise: Extending the Workflow</h2>
+
+    <div class="exercise">
+        <h4>Exercise: Add a New Analysis Step</h4>
+        
+        <p><strong>Task:</strong> Add a quality control step that runs FastQC on cleaned reads.</p>
+        
+        <div class="code-block">
+# Step 1: Add function to Functions_captus.sh
+function run_fastqc {
+    INDIR=$1
+    OUTDIR=$2
+    SAMPLE=$3
+    
+    mkdir -p $OUTDIR/${SAMPLE}
+    fastqc $INDIR/${SAMPLE}_R1.fq.gz $INDIR/${SAMPLE}_R2.fq.gz \
+           -o $OUTDIR/${SAMPLE} \
+           --threads 4
+}
+
+# Step 2: Add router case
+case "$1" in
+    run_fastqc)
+        run_fastqc $3 $4 $SAMPLE
+        ;;
+    # ... existing cases
+esac
+
+# Step 3: Add submission function to Captus.sh
+function quality_control {
+    JOB=$(sbatch --array=1-4 \
+                 --cpus-per-task=4 \
+                 --mem=4G \
+                 --job-name="FASTQC" \
+                 $SCRIPTS/Functions_captus.sh run_fastqc $METADATA $RESULT1 $RESULT1/fastqc \
+                 | awk '{print $4}')
+    echo "QC Job $JOB submitted"
+}
+
+# Step 4: Call it in workflow
+quality_control
+        </div>
+    </div>
+
+    <h2>8. Best Practices Summary</h2>
+
+    <table>
+        <tr>
+            <th>Category</th>
+            <th>Best Practice</th>
+            <th>Why</th>
+        </tr>
+        <tr>
+            <td>Modularity</td>
+            <td>One function = one analysis step</td>
+            <td>Easy to test, debug, and reuse</td>
+        </tr>
+        <tr>
+            <td>Separation</td>
+            <td>Controller vs Worker files</td>
+            <td>Clear responsibilities, easier maintenance</td>
+        </tr>
+        <tr>
+            <td>Metadata</td>
+            <td>Drive workflows with metadata files</td>
+            <td>Scalable, reproducible, easy to update</td>
+        </tr>
+        <tr>
+            <td>Resources</td>
+            <td>Match resources to job requirements</td>
+            <td>Efficient cluster usage, avoid over-requesting</td>
+        </tr>
+        <tr>
+            <td>Cleanup</td>
+            <td>Remove temporary files</td>
+            <td>Prevent filling storage, avoid conflicts</td>
+        </tr>
+        <tr>
+            <td>Documentation</td>
+            <td>Comment function inputs and outputs</td>
+            <td>Others (and future you) can understand the code</td>
+        </tr>
+    </table>
+
+    <div class="warning">
+        <h4>🚨 Common Pitfalls to Avoid</h4>
+        <ul>
+            <li><strong>Hardcoding paths:</strong> Use variables for all directories</li>
+            <li><strong>Ignoring job dependencies:</strong> Jobs may start before inputs are ready</li>
+            <li><strong>Shared temp files:</strong> Always use sample-specific temporary directories</li>
+            <li><strong>No error checking:</strong> Always verify inputs exist before processing</li>
+            <li><strong>Memory over-allocation:</strong> Array jobs multiply memory by array size</li>
+        </ul>
+    </div>
+
+    <div class="tip">
+        <h4>📌 Key Takeaways</h4>
+        <ul>
+            <li><strong>Two-file system</strong> provides clean separation of workflow logic and execution</li>
+            <li><strong>Functions as building blocks</strong> create reusable, testable analysis components</li>
+            <li><strong>SLURM arrays</strong> enable efficient parallel processing of multiple samples</li>
+            <li><strong>Metadata-driven design</strong> makes workflows scalable and maintainable</li>
+            <li><strong>Job ID tracking</strong> allows dependency management and workflow control</li>
+            <li><strong>This pattern can be adapted</strong> for any bioinformatics pipeline, not just Captus</li>
+        </ul>
+    </div>
+
+    <div class="important">
+        <h4>🔗 Additional Resources</h4>
+        <ul>
+            <li><a href="https://help.cropdiversity.ac.uk/slurm-overview.html">SLURM Documentation</a></li>
+            <li><a href="https://edgardomortiz.github.io/captus.docs/">Captus Documentation</a></li>
+            <li><a href="https://devhints.io/bash">Bash Scripting Cheatsheet</a></li>
+        </ul>
+    </div>
+</body>
