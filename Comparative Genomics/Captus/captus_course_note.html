@@ -533,6 +533,42 @@ IQTree ...  # Only run tree building
         </ul>
     </div>
 
+    <div class="exercise">
+        <h4>🔗 Try It Yourself</h4>
+        <ul>
+            <li> make a simple function that tell you which sample it is running</li>
+            <div class="code-block">
+function print_sample {
+    SAMPLE=$1
+    echo "Processing sample: $SAMPLE"
+}
+            </div>
+            <li> add the function to the router so that it can be called from the main workflow</li>
+            <div class="code-block">
+case "$1" in
+    print_sample)
+        print_sample $SAMPLE
+        ;;
+    *)
+        echo "Unknown function: $1"
+        exit 1
+        ;;
+esac
+            </div>
+        <li> submit it as an array job to see the output for each sample</li>
+        <div class="code-block">
+            JOB=$(sbatch --array=1-4 \
+              --cpus-per-task=1 \
+              --mem=2M \
+              --job-name="test_print_name" \
+              $SCRIPTS/Functions_captus.sh print_sample $METADATA  \
+              | awk '{print $4}')
+            echo "Test Job $JOB submitted"
+        </div>
+       </ul>
+       Now you have made a function in the package and managed to add it into the slurm workflow! You can follow the same pattern to add any new function you want to the workflow, and control when it is run by adding it to the main function and/or commenting it out.
+    </div>
+    
     <h2>7. Practical Exercise: Extending the Workflow</h2>
 
     <div class="exercise">
@@ -639,6 +675,7 @@ quality_control
             <li><strong>This pattern can be adapted</strong> for any bioinformatics pipeline, not just Captus</li>
         </ul>
     </div>
+
 
     <div class="important">
         <h4>🔗 Additional Resources</h4>
