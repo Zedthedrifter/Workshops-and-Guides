@@ -142,6 +142,13 @@ html
             <li>Best practices for scalable HPC workflows</li>
         </ul>
     </div>
+    <div class="tip">
+        <strong>🔍 before we start, make sure you have installed captus into your environment:</strong>
+        <div class="code-block">
+# Install Captus (if not already done)  
+conda create -n captus -c bioconda -c conda-forge captus iqtree -y
+        </div>
+    </div>
 
     <h2>1. The Architecture: Two-File System</h2>
     
@@ -218,13 +225,29 @@ function captus_clean {
                  --overwrite
 }
     </div>
-
+<div class="tip">
+    <strong>💡 Function Design Tips:</strong>
+    <ul>
+        <li><strong>Clear inputs:</strong> Use variables, not hardcoded paths</li>
+        <li><strong>Single responsibility:</strong> Each function should do one thing (in case later you only want a certain task to be performed but not the other)</li>
+        <li><strong>Document inputs/outputs:</strong> Comment what each parameter is for (to make your life easier when maintaining the code, or when other people use it)</li>
+        <li><strong>Error checking:</strong> Verify inputs exist before processing/give yourself some instant feedback</li>
+    </ul>
+</div>
     <h4>Making Functions Callable from Outside</h4>
     <div class="important">
 this is where we collect user inputs and pass to the actual functions 
 
         </div>
     <div class="code-block">
+MY_FUNCTION=$1 #YOU don't need this line. just a reminder of what the first variable means
+METADATA=$2
+#GET SAMPLE
+SAMPLE=$(sed -n "${SLURM_ARRAY_TASK_ID}p" ${METADATA} | cut -d ',' -f1)
+echo $SAMPLE
+
+####
+
 # The "Router" - case statement at the end of Functions_captus.sh
 case "$1" in
     captus_clean)
@@ -249,7 +272,26 @@ case "$1" in
         ;;
 esac
     </div>
+<div class="tip">
+        before the router, we also capture some common variables:
+        <li><strong>MY_FUNCTION:</strong> captures the function name for clarity (not strictly needed but you can replace the $1 later with $MY_FUNCTION to remind yourself what the process is doing)</li>
+        <li><strong>METADATA:</strong> captures the metadata file path (even if you might not need metadata everytime, it is easier to keep a consistent input structure)</li>
+        <li><strong>SAMPLE:</strong> captures the sample name based on the array task ID (so you don't have to extract it every time in the function)</li>
+        <li><strong>Router:</strong> the case statement at the end routes calls to the correct function based on the first argument</li>
 
+
+    </div>
+
+<div class="tip">
+    <strong>💡 Router structure explained:</strong>
+<ul>
+    <li><strong>case "$1" in--</strong> starts the case block, using the first command-line argument ($1) as the value to match.</li>
+    <li><strong>pattern)--</strong> each possible value is listed as a pattern ending with a )</li>
+    <li><strong>;;--</strong> marks the end of a block.</li>
+    <li><strong>*)--</strong> wild card, match anything unmatched above. the default case if no patterns match.</li>
+    <li><strong>esac--</strong> closes the case block (case spelled backwards)..</li> 
+</ul>
+    </div>
     <div class="tip">
         <strong>💡 Package Creation Pattern:</strong>
         <ol>
@@ -280,11 +322,28 @@ function captus_clean {
                   | awk '{print $4}')       # Capture JobID
     echo "Job $JOB1 submitted"
 }
-
-# In Functions_captus.sh - Using the array ID
-SAMPLE=$(sed -n "${SLURM_ARRAY_TASK_ID}p" ${METADATA} | cut -d ',' -f1)
-# This gets the Nth line from metadata file based on array task ID
     </div>
+<div class ="tip">
+instead of specifying how the jobs are run in the script, you can specify it while submitting the job in commandline. This allows you to easily change the number of parallel jobs, or run on a subset of samples without changing the code.
+</div>
+<div class="code-block">
+    sbatch --array=${ARRAY} \
+              --cpus-per-task=2 \
+              --mem=2G \
+              --job-name="iqtree" \
+</div>
+<div class="tip">
+    of course, you may not want to write all the sbatch parameters every time you submit a job.
+    for everything that is common across all jobs, you can put it in the function script as a regular sbatch heading. 
+    we just want to change memory, cpus, and array size, name, and partition (short, medium, long) for different functions, so we specify those in the submission function in Captus.sh.
+</div>
+<div class="code-block">
+ #SBATCH --export=ALL
+#SBATCH --mail-user=your_rbge_email@rbge.org.uk
+#SBATCH --mail-type=END,FAIL
+#SBATCH --output $SCRATCH/slurm/slurm-%x-%A-%a.out   #if you want to capture all slurm output in one place. optional, but you can do it
+</div>
+
 
     <h3>3.2 Job Dependencies and Tracking</h3>
 
@@ -383,7 +442,7 @@ SAMPLE=$(sed -n "${SLURM_ARRAY_TASK_ID}p" ${METADATA} | cut -d ',' -f1)
 # This pattern:
 # - Makes workflow sample-agnostic
 # - Easy to add/remove samples (just update metadata)
-# - Array size automatically matches number of samples
+# - easy to run on a subset of samples (e.g., --array=2,3)
     </div>
 
     <h2>5. Temporary File Management in Parallel Jobs</h2>
