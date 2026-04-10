@@ -73,9 +73,9 @@ function chimera {
     SAMPLE=$4
 
     echo "Removing chimeras for $SAMPLE"
-    vsearch --uchime3_denovo $INDIR/${SAMPLE}*.fa \
+    vsearch --uchime3_denovo $INDIR/${SAMPLE}_unoise.min${MINSIZE}.fa \
             --sizein --sizeout \
-            --nonchimeras $OUTDIR/${SAMPLE}.fa
+            --nonchimeras $OUTDIR/${SAMPLE}_nochim.min${MINSIZE}.fa
 }
 
 # ==================== FUNCTION: BUILD ASV TABLE ====================
@@ -83,18 +83,21 @@ function chimera {
 function compile_index {
     INDIR=$1
     OUTDIR=$2
+    MINSIZE=$3
     
-    cat ${INDIR}/*_nochim.min2.fa > $OUTDIR/tmp_asv_sequences.fa
+    mkdir $OUTDIR/min${MINSIZE}
+    
+    cat ${INDIR}/*_nochim.min${MINSIZE}.fa > $OUTDIR/min${MINSIZE}/tmp_asv_sequences.fa
     #remove duplicates
     echo "Dereplicating Compiled reads"
-    vsearch --derep_fulllength $OUTDIR/tmp_asv_sequences.fa \
+    vsearch --derep_fulllength $OUTDIR/min${MINSIZE}/tmp_asv_sequences.fa \
             --sizeout --relabel uniq \
-            --output $OUTDIR/tmp_asv_sequences.dedup.fa
-    awk '/^>/ {printf ">ASV_%d\n", ++c; next} {print}' $OUTDIR/tmp_asv_sequences.dedup.fa > $OUTDIR/asv_sequences.fa
+            --output $OUTDIR/min${MINSIZE}/tmp_asv_sequences.dedup.fa
+    awk '/^>/ {printf ">ASV_%d\n", ++c; next} {print}' $OUTDIR/min${MINSIZE}/tmp_asv_sequences.dedup.fa > $OUTDIR/min${MINSIZE}/asv_sequences.fa
     # Index the ASV sequences
-    vsearch --usearch_global $OUTDIR/asv_sequences.fa \
-            --db $OUTDIR/asv_sequences.fa \
-            --self --id 1.0 --userout $OUTDIR/asv_index.txt \
+    vsearch --usearch_global $OUTDIR/min${MINSIZE}/asv_sequences.fa \
+            --db $OUTDIR/min${MINSIZE}/asv_sequences.fa \
+            --self --id 1.0 --userout $OUTDIR/min${MINSIZE}/asv_index.txt \
             --userfields query+target
 
 }
@@ -154,7 +157,7 @@ function compile_table {
     
     #extract just the ASVs with chlorophyta
     echo 'INDEX' > Chlorophyta_ASV.txt
-    grep 'Chlorophyta' $TAXON |cut -f 1|sort -k1,1V -nr >> Chlorophyta_ASV.txt
+    grep 'Chlorophyta' $TAXON |cut -f 1 -d ','|sort -k1,1V -nr >> Chlorophyta_ASV.txt
     echo "extracting $(wc -l Chlorophyta_ASV.txt) chlorophyta containing ASVs" 
     grep -wFf Chlorophyta_ASV.txt $INDIR/asv_counts_compiled.csv > $INDIR/asv_counts.chloro.csv
     
@@ -168,8 +171,11 @@ function com_UNOISE {
     INDIR=$1
     OUTDIR=$2
     MINSIZE=$3
+    #
+    THRESHOLD=2
     
-    cat ${INDIR}/*.fa > $OUTDIR/tmp_asv_sequences.fa
+    ls ${INDIR}/*.min${MINSIZE}.fa
+    cat ${INDIR}/*.min${MINSIZE}.fa > $OUTDIR/tmp_asv_sequences.fa
     #remove duplicates
     echo "Dereplicating Compiled reads"
     vsearch --derep_fulllength $OUTDIR/tmp_asv_sequences.fa \
@@ -180,7 +186,7 @@ function com_UNOISE {
     vsearch --cluster_unoise $OUTDIR/tmp_asv_sequences.dedup.fa \
             --id 1 \
             --sizein --sizeout \
-            --minsize $MINSIZE \
+            --minsize $THRESHOLD \
             --consout $OUTDIR/tmp_asv_sequences.unoise.fa
     awk '/^>/ {printf ">ASV_%d\n", ++c; next} {print}' $OUTDIR/tmp_asv_sequences.unoise.fa > $OUTDIR/asv_sequences.fa
     echo "done unoise"
@@ -197,6 +203,29 @@ function com_UNOISE {
 
 }
 
+function read_count_chloro {
+
+INFILE=$1
+
+for SAMPLE in $(tail -n +2 ${METADATA} | cut -d ',' -f4)
+do
+
+awk -F"," -v sample="$SAMPLE" '
+NR==1 {
+    col = 0
+            for(i=1; i<=NF; i++) {
+                gsub(/^[ \t]+|[ \t]+$/, "", $i)   # trim spaces
+                if($i == sample) { col = i; break }
+            }
+            if(col == 0) {
+                printf "Warning: Column \"%s\" not found in header\n", sample > "/dev/stderr"
+                exit 1
+            }
+        }
+        NR>1 && col { print $col }
+        ' "$INFILE" |awk '{sum+=$1} END {print sum}'
+done
+}
 
 #================================================================================
 #USER INPUTS
@@ -209,6 +238,9 @@ echo $SAMPLE
 case "$1" in
     simple_QC)
         simple_QC $3 $4 $SAMPLE # 
+        ;;
+    read_count_chloro)
+        read_count_chloro $3 # 
         ;;
     v_reorient)
         v_reorient $3 $4 $5 $SAMPLE # 
@@ -223,7 +255,7 @@ case "$1" in
         chimera  $3 $4 $5 $SAMPLE # 
         ;;
     compile_index )
-        compile_index  $3 $4 # 
+        compile_index  $3 $4 $5 # 
         ;;
     asv_counts )
         asv_counts  $3 $4 $5 $SAMPLE # 
@@ -235,7 +267,7 @@ case "$1" in
         taxonomy  $3 $4 # 
         ;;
     com_UNOISE)
-        com_UNOISE $2 $3 $4 # 
+        com_UNOISE $3 $4 $5 # 
         ;;
     *)
         echo "Unknown function: $1: Usage: $0 {captus_clean|captus_assembly|fastp_qc} [args]"
