@@ -1,0 +1,64 @@
+📋 Your Globus Account Information
+Information	Details
+Email	zchen2bowdoin@gmail.com
+Endpoint Name	zchen_RBGE_GLOBUS
+Endpoint UUID	e4f6bd96-1d6b-11f1-8fd8-0affe9efaee5
+Source Collection	E263010_James_Nicholls
+Source UUID	7a778fc0-de7a-44e4-8ea0-197d9b9f647a
+🔧 Part 1: Setting Up a Local Endpoint on a Cluster
+Step 1: Download Globus Connect Personal
+bash
+# Download the latest version for Linux
+wget https://downloads.globus.org/globus-connect-personal/stable/globusconnectpersonal-latest.tgz
+
+# Extract the archive
+tar -xzf globusconnectpersonal-latest.tgz
+cd globusconnectpersonal-*
+Step 2: Register Your Endpoint
+bash
+# Run the setup (this opens a browser for authentication)
+./globusconnectpersonal -setup
+
+# Follow the browser prompts to log in with your email
+# After successful setup, you'll see:
+# "registered new endpoint, id: YOUR-ENDPOINT-UUID"
+Step 3: Configure Accessible Paths
+bash
+# Stop the service if running
+./globusconnectpersonal -stop
+
+# Edit the paths configuration file
+nano ~/.globusonline/lta/config-paths
+
+# Add your working directories (one per line)
+# Format: /full/path/to/directory,0,1
+# Example:
+/mnt/shared/scratch/zchen/,0,1
+/mnt/shared/projects/rbge/Data_download/Globus/,0,1
+
+# Save and exit
+Step 4: Start the Service
+bash
+# Start in background mode
+./globusconnectpersonal -start &
+
+# Check status
+./globusconnectpersonal -status
+# Should show: "Globus Online: connected"
+📤 Part 2: Transferring Files
+Method A: Web Interface (Recommended for First Transfer)
+Go to https://app.globus.org
+
+Log in with your email (zchen2bowdoin@gmail.com)
+
+Left Panel (Source): Search for and select E263010_James_Nicholls
+
+Navigate to your file and select it
+
+Right Panel (Destination): Search for and select zchen_RBGE_GLOBUS
+
+Navigate to your desired destination folder
+
+Click the blue arrow to start transfer
+
+Monitor progress in the "Activity" tab
